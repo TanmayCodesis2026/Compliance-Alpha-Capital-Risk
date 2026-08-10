@@ -321,7 +321,7 @@ function Compliance() {
       <div style={{ marginBottom: 22 }}>
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em' }}>Compliance</h1>
         <div style={{ marginTop: 6, color: 'var(--text-2)' }}>
-          Duplicate-account matches across surname, address, IP, CID, wallet and card.
+          Duplicate-account matches across name, surname, emailId, address, IP and CID.
         </div>
       </div>
       {/* toolbar: search + evidence filters + detection date range */}

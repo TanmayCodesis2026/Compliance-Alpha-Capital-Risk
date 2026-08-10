@@ -358,7 +358,7 @@ export default function App() {
             Gambling
           </button> */}
 
-          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', color: 'var(--text-3)', padding: '16px 10px 6px', textTransform: 'uppercase' }}>Reference</div>
+          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', color: 'var(--text-3)', padding: '16px 10px 6px', textTransform: 'uppercase' }}>Duplicate Accounts</div>
           {/* <button className="nav-btn" onClick={navGo.compliance1} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 11px', border: 'none', borderRadius: 8, cursor: 'pointer', font: 'inherit', fontWeight: 500, textAlign: 'left', background: screen === 'compliance1' ? 'var(--accent-soft)' : 'transparent', color: screen === 'compliance1' ? 'var(--accent)' : 'var(--text-2)' }}>
             Old Compliance
           </button> */}
