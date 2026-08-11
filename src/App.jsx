@@ -13,6 +13,14 @@ import MinimumTradingDays from './screens/MinimumTradingDays.jsx'
 import NewsTrading from './screens/NewsTrading.jsx'
 import Gambling from './screens/Gambling.jsx'
 import OrderBookSpam from './screens/OrderBookSpam.jsx'
+import ReverseTrading from './screens/ReverseTrading.jsx'
+import GroupTrading from './screens/GroupTrading.jsx'
+import GroupOccasions from './screens/GroupOccasions.jsx'
+import FlagSignals from './screens/FlagSignals.jsx'
+import FlagAccounts from './screens/FlagAccounts.jsx'
+import MatchOccurrences from './screens/MatchOccurrences.jsx'
+import UserTodProfile from './screens/UserTodProfile.jsx'
+import UserDurationProfile from './screens/UserDurationProfile.jsx'
 import NewsEvents from './screens/NewsEvents.jsx'
 import Logs from './screens/Logs.jsx'
 import ComingSoon from './screens/ComingSoon.jsx'
@@ -53,6 +61,28 @@ const MODES = {
           { key: 'news', label: 'News Trading' },
           { key: 'gambling', label: 'Gambling' },
           { key: 'obs', label: 'Order Book Spam' },
+        ],
+      },
+      {
+        // These match one account's activity against another's, rather than
+        // checking a single login against a rule — hence the separate section.
+        title: 'Cross-Account Detectors (RT / GT)',
+        items: [
+          { key: 'reverse', label: 'Reverse Trading' },
+          { key: 'group', label: 'Group Trading' },
+          { key: 'groupOccasions', label: 'Group Occasions' },
+          { key: 'flagSignals', label: 'Flag Signals' },
+          { key: 'flagAccounts', label: 'Flag Accounts' },
+          { key: 'matchOccurrences', label: 'Match Occurrences' },
+        ],
+      },
+      {
+        // Behavioural fingerprints that corroborate a cross-account match.
+        // They are evidence, not violations, so they list without a detail view.
+        title: 'Trading Profiles',
+        items: [
+          { key: 'todProfile', label: 'User Time of Day Profile' },
+          { key: 'durationProfile', label: 'User Duration Profile' },
         ],
       },
       {
@@ -189,14 +219,14 @@ export default function App() {
   }, [])
 
   // Clicking a by_type tile on the dossier opens that model's screen, filtered
-  // to the login. reverse_trading / group_trading are deliberately absent: they
-  // were listed by Analysis, which no longer exists, so those tiles stay inert
-  // rather than routing somewhere blank.
+  // to the login. Every one of the ten models now has a screen, so no tile is
+  // inert.
   const openModelForAccount = useCallback((modelKey, login) => {
     const map = {
       two_minute: 'twoMinute', weekend_holding: 'weekend', one_percent: 'onePercent',
       max_lot: 'maxLot', minimum_trading_days: 'minDays', news_trading: 'news',
       gambling: 'gambling', order_book_spam: 'obs',
+      reverse_trading: 'reverse', group_trading: 'group',
     }
     if (!login || !map[modelKey]) return
     setModelAccount(login)
@@ -372,6 +402,14 @@ export default function App() {
         {screen === 'news' && <NewsTrading onAccountClick={openAccount} initialAccount={modelAccount} />}
         {screen === 'gambling' && <Gambling onAccountClick={openAccount} initialAccount={modelAccount} />}
         {screen === 'obs' && <OrderBookSpam onAccountClick={openAccount} initialAccount={modelAccount} />}
+        {screen === 'reverse' && <ReverseTrading onAccountClick={openAccount} initialAccount={modelAccount} />}
+        {screen === 'group' && <GroupTrading onAccountClick={openAccount} initialAccount={modelAccount} />}
+        {screen === 'groupOccasions' && <GroupOccasions onAccountClick={openAccount} />}
+        {screen === 'flagSignals' && <FlagSignals onAccountClick={openAccount} />}
+        {screen === 'flagAccounts' && <FlagAccounts onAccountClick={openAccount} />}
+        {screen === 'matchOccurrences' && <MatchOccurrences onAccountClick={openAccount} />}
+        {screen === 'todProfile' && <UserTodProfile onAccountClick={openAccount} />}
+        {screen === 'durationProfile' && <UserDurationProfile onAccountClick={openAccount} />}
         {screen === 'compliance1' && <Compliance1/>}
         {screen === 'compliance' && <Compliance/>}
         {screen === 'events' && <NewsEvents />}

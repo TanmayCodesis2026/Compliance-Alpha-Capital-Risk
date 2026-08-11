@@ -269,10 +269,8 @@ export function detailSignals(detail) {
 // so everything derived here is a rollup of those counts. Models the UI has a
 // dedicated screen for carry `screen`; the rest render as read-only counters.
 const MODEL_META = {
-  // Reverse/group trading were listed by Analysis; with that screen gone they
-  // still report a count but have nowhere to drill into.
-  reverse_trading:      { label: 'Reverse Trading',      color: 'var(--crit)' },
-  group_trading:        { label: 'Group Trading',        color: 'var(--high)' },
+  reverse_trading:      { label: 'Reverse Trading',      screen: 'reverse',    color: 'var(--crit)' },
+  group_trading:        { label: 'Group Trading',        screen: 'group',      color: 'var(--high)' },
   order_book_spam:      { label: 'Order Book Spam',      screen: 'obs',        color: 'var(--accent)' },
   news_trading:         { label: 'News Trading',         screen: 'news',       color: 'var(--accent)' },
   gambling:             { label: 'Gambling',             screen: 'gambling',   color: 'var(--accent)' },

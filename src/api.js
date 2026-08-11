@@ -83,6 +83,51 @@ export function fetchFlagDetail(source, id) {
   return get(`/api/flags/${encodeURIComponent(source)}/${encodeURIComponent(id)}/`)
 }
 
+// ---- cross-account detectors (RT / GT) ----
+// Unlike the per-login rule scans, these match one account's activity against
+// another's, so a row spans several logins. Reverse and group trading have a
+// detail route; the four supporting tables are list-only.
+export function fetchReverseTrading(opts = {}) {
+  return get('/api/reverse-flags/', opts)
+}
+export function fetchReverseTradingDetail(id) {
+  return get(`/api/reverse-flags/${encodeURIComponent(id)}/`)
+}
+
+export function fetchGroupTrading(opts = {}) {
+  return get('/api/group-flags/', opts)
+}
+export function fetchGroupTradingDetail(id) {
+  return get(`/api/group-flags/${encodeURIComponent(id)}/`)
+}
+
+// Each group-trading flag can recur; one row per occasion.
+export function fetchGroupOccasions(opts = {}) {
+  return get('/api/group-occasions/', opts)
+}
+// The individual signals (OM, CM, PS, …) that fired for a flag.
+export function fetchFlagSignals(opts = {}) {
+  return get('/api/signals/', opts)
+}
+// The accounts participating in each flag.
+export function fetchFlagAccounts(opts = {}) {
+  return get('/api/flag-accounts/', opts)
+}
+// Prior occurrences of the same account pairing.
+export function fetchMatchOccurrences(opts = {}) {
+  return get('/api/match-occurrences/', opts)
+}
+
+// ---- trading profiles ----
+// Behavioural fingerprints per user, used as corroborating signals rather than
+// flags in their own right — list-only.
+export function fetchUserTodProfile(opts = {}) {
+  return get('/api/user-tod-daily/', opts)
+}
+export function fetchUserDurationProfile(opts = {}) {
+  return get('/api/user-duration-daily/', opts)
+}
+
 // ---- detection models (one resource endpoint each) ----
 // Every model below is a daily *scan* keyed on login_id, and every list row is
 // the resource itself — `flag_id` ("gambling-09ba3e66b546") is the detail key,
