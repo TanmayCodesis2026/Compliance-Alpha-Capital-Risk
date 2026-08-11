@@ -1,5 +1,7 @@
-import React, { useMemo, useState, useEffect } from 'react'
-// import { getRequestHeaders } from '../api.js'
+import { useMemo, useState, useEffect } from 'react'
+
+// Same host as every other call in the app (api.js, auth.js, Compliance.jsx).
+const BASE_URL = import.meta.env.VITE_BASE_URL
 
 const FIELD_MAP = {
   SURNAME_FLAG: {
@@ -135,7 +137,7 @@ const Compliance1 = () => {
     setIsLoading(true)
     setErrorMessage('')
 
-    const URL = 'https://backend.alphacapitalgroup.uk/adm/email/signin/'
+    const URL = `${BASE_URL}adm/email/signin/`
     const res = await fetch(URL, {
       method: 'POST',
       headers: {
@@ -163,7 +165,7 @@ const Compliance1 = () => {
   }
 
   const fetchComplianceData = async (accessToken) => {
-    const URL = 'https://backend.alphacapitalgroup.uk/admin/compliance/duplicates/all/'
+    const URL = `${BASE_URL}admin/compliance/duplicates/all/`
     const response = await fetch(URL, {
       headers: {
         'Content-Type': 'application/json',
@@ -200,7 +202,7 @@ const Compliance1 = () => {
       return false
     }
 
-    const URL = 'https://backend.alphacapitalgroup.uk/get/refreshtoken/'
+    const URL = `${BASE_URL}get/refreshtoken/`
     const response = await fetch(URL, {
       method: 'POST',
       headers: {

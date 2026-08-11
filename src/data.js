@@ -59,6 +59,28 @@ export function fmtDate(iso) {
   return `${mon} ${d.getDate()} · ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+// "2026-07-28" -> "Jul 28, 2026". Parsed by hand rather than via Date(): a
+// bare date string is read as UTC midnight, which renders as the previous day
+// for anyone west of Greenwich.
+export function fmtDay(ymd) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(ymd || ''));
+  if (!m) return '—';
+  return `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])}, ${m[1]}`;
+}
+
+// MT5 stamps its timestamps "2026.07.28 20:29:04" — dotted, no timezone, and
+// not a format Date() is required to parse, so pull the parts out directly.
+//   withDate=false -> "20:29:04"   withDate=true -> "Jul 28 · 20:29:04"
+export function fmtMt5(stamp, { withDate = false } = {}) {
+  const s = String(stamp || '');
+  const m = /^(\d{4})[.\-/](\d{2})[.\-/](\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/.exec(s);
+  if (!m) return s || '—';
+  const time = `${m[4]}:${m[5]}:${m[6] || '00'}`;
+  return withDate ? `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])} · ${time}` : time;
+}
+
 // "2026-06-01T13:45:50Z" -> "13:45:50" (time only)
 export function fmtTime(iso) {
   if (!iso) return '—';
@@ -241,116 +263,118 @@ export function detailSignals(detail) {
   });
 }
 
-// Decorate the full /api/overview/ payload into render-ready structures, mapping
-// EVERY field the endpoint returns (structured kpis, matrix, rollups, etc.).
-export function decorateOverview(ov) {
-  if (!ov) return null;
-  const k = ov.kpis || {};
-  const fmtMaybe = (v) => (v === null || v === undefined ? '—' : v.toLocaleString());
+// ---- /api/overview/ ----
+// The endpoint returns one flat count per detection model:
+//   { "two_minute": 21, "order_book_spam": 382, "news_trading": 460, ... }
+// so everything derived here is a rollup of those counts. Models the UI has a
+// dedicated screen for carry `screen`; the rest render as read-only counters.
+const MODEL_META = {
+  // Reverse/group trading were listed by Analysis; with that screen gone they
+  // still report a count but have nowhere to drill into.
+  reverse_trading:      { label: 'Reverse Trading',      color: 'var(--crit)' },
+  group_trading:        { label: 'Group Trading',        color: 'var(--high)' },
+  order_book_spam:      { label: 'Order Book Spam',      screen: 'obs',        color: 'var(--accent)' },
+  news_trading:         { label: 'News Trading',         screen: 'news',       color: 'var(--accent)' },
+  gambling:             { label: 'Gambling',             screen: 'gambling',   color: 'var(--accent)' },
+  two_minute:           { label: 'Two Minute',           screen: 'twoMinute',  color: 'var(--accent)' },
+  weekend_holding:      { label: 'Weekend Holding',      screen: 'weekend',    color: 'var(--accent)' },
+  one_percent:          { label: 'One Percent',          screen: 'onePercent', color: 'var(--accent)' },
+  max_lot:              { label: 'Max Lot',              screen: 'maxLot',     color: 'var(--accent)' },
+  minimum_trading_days: { label: 'Minimum Trading Days', screen: 'minDays',    color: 'var(--accent)' },
+};
 
-  // KPI cards driven by the structured kpis object (value + note + extras).
-  const kpiCards = [
-    {
-      label: 'Open flags',
-      value: fmtMaybe(k.open_flags?.value),
-      sub: k.open_flags?.delta_vs_yesterday != null
-        ? `Δ ${k.open_flags.delta_vs_yesterday} vs. yesterday`
-        : '',
-      note: k.open_flags?.note,
-      available: k.open_flags?.available,
-    },
-    {
-      label: 'Critical',
-      value: fmtMaybe(k.critical_unassigned?.value),
-      color: 'var(--crit)',
-      sub: k.critical_unassigned?.breaching_sla_lt_1h != null
-        ? `${k.critical_unassigned.breaching_sla_lt_1h} breaching SLA < 1h`
-        : '',
-      note: k.critical_unassigned?.note,
-      available: k.critical_unassigned?.available,
-    },
-    {
-      label: 'Avg review time',
-      value: k.avg_review_time_hours?.value != null ? k.avg_review_time_hours.value + 'h' : '—',
-      sub: k.avg_review_time_hours?.sla_target_hours != null
-        ? `SLA target ${k.avg_review_time_hours.sla_target_hours}h`
-        : '',
-      note: k.avg_review_time_hours?.note,
-      available: k.avg_review_time_hours?.available,
-    },
-    {
-      label: 'Accounts in scope',
-      value: fmtMaybe(k.accounts_in_scope?.value),
-      sub: (k.accounts_in_scope?.evaluation != null || k.accounts_in_scope?.qualified != null)
-        ? `Eval ${k.accounts_in_scope.evaluation ?? '—'} · Qual ${k.accounts_in_scope.qualified ?? '—'}`
-        : 'appearing in flags',
-      note: k.accounts_in_scope?.note,
-      available: k.accounts_in_scope?.available,
-    },
-    {
-      label: 'Suppressed · 24h',
-      value: fmtMaybe(k.suppressed_24h?.value),
-      sub: k.suppressed_24h?.configured_total != null
-        ? `${k.suppressed_24h.configured_total} configured total`
-        : '',
-      note: k.suppressed_24h?.note,
-      available: k.suppressed_24h?.available,
-    },
+// "some_new_rule" -> "Some New Rule", so a model added server-side still shows
+// up with a readable name instead of being dropped from the dashboard.
+const titleCase = (key) => String(key).split('_').filter(Boolean)
+  .map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');
+
+// The counts arrive either flat at the top level or wrapped — `by_type` on its
+// own, or under `summary`/`data`/`counts`. Rather than assume one, try known
+// locations in order of how specific they are. Getting this wrong renders an
+// empty dashboard with no error, so it is worth being liberal here.
+//
+// Order matters: an explicit `by_type` beats a flat scan, because a wrapper
+// like { summary: { total_flags: 893, by_type: {…} } } has a numeric field
+// sitting beside the map that would otherwise be mistaken for the counts.
+
+// Aggregates and paging fields that are numeric but are not a model count.
+const NOT_A_COUNT = new Set(['total_flags', 'total', 'count', 'page', 'page_size', 'limit', 'offset']);
+
+const numericEntries = (o) =>
+  (o && typeof o === 'object' && !Array.isArray(o))
+    ? Object.entries(o).filter(([k, v]) => typeof v === 'number' && isFinite(v) && !NOT_A_COUNT.has(k))
+    : [];
+
+export function resolveCounts(payload) {
+  if (!payload || typeof payload !== 'object') return [];
+
+  const candidates = [
+    payload.by_type,
+    payload.summary?.by_type,
+    payload.data?.by_type,
+    payload.overview?.by_type,
+    payload.counts,
+    payload.summary?.counts,
+    payload,           // the documented flat shape
+    payload.summary,
+    payload.data,
+    payload.results,
+    payload.overview,
   ];
 
-  // by_flag_type rollup (code/label/source/count), labels de-mojibaked.
-  const byType = (ov.by_flag_type || []).map((t) => ({
-    code: t.code,
-    label: fixMojibake(t.label),
-    source: t.source,
-    count: t.count,
-    color: t.code.startsWith('RT') ? 'var(--crit)' : 'var(--high)',
-  }));
+  for (const c of candidates) {
+    const entries = numericEntries(c);
+    if (entries.length) return entries;
+  }
+  return [];
+}
 
-  // signal_severity_matrix, with the UPGRADE_* results rendered distinctly.
-  const matrix = (ov.signal_severity_matrix || []).map((r) => {
-    const result = r.result;
-    const isUpgrade = String(result).startsWith('UPGRADE');
-    const sm = sevMeta[sevKey(result)];
-    return {
-      signals: fixMojibake(r.signals),
-      recurrence: fixMojibake(r.recurrence),
-      result,
-      isUpgrade,
-      badge: isUpgrade ? null : (sm ? { t: sm.label, c: sm.color, s: sm.soft } : { t: result, c: 'var(--text-2)', s: 'var(--inset)' }),
-      upgradeLabel: isUpgrade ? '▲ upgrade ' + (result.match(/\d+/)?.[0] || '1') + ' level' : null,
-    };
-  });
+export function decorateOverview(ov) {
+  if (!ov) return null;
 
-  // suppression_filters (name/active/count_24h/detail).
-  const suppression = (ov.suppression_filters || []).map((f) => ({
-    name: fixMojibake(f.name),
-    active: !!f.active,
-    count24h: f.count_24h,
-    detail: fixMojibake(f.detail),
-  }));
+  // Only numeric fields count: a nested object or timestamp alongside them is
+  // ignored rather than added into the total as NaN.
+  const counts = resolveCounts(ov);
+  const totalFlags = counts.reduce((a, [, v]) => a + v, 0);
+  const busiest = Math.max(1, ...counts.map(([, v]) => v));
 
-  // signals_by_code: { OM: 560, ... } -> sorted list
-  const signalsByCode = Object.entries(ov.signals_by_code || {})
-    .sort((a, b) => b[1] - a[1])
-    .map(([code, count]) => ({ code, full: sigFull[code] || code, count }));
+  const models = counts
+    .map(([key, count]) => {
+      const meta = MODEL_META[key] || {};
+      return {
+        key,
+        count,
+        label: meta.label || titleCase(key),
+        screen: meta.screen || null,
+        color: meta.color || 'var(--accent)',
+        // bar width is relative to the busiest model, so a 3 next to a 460 is
+        // still visible; `share` is the honest proportion of the total.
+        barPct: Math.round((count / busiest) * 100),
+        share: totalFlags ? (count / totalFlags) * 100 : 0,
+      };
+    })
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 
-  // accounts_by_platform: { "Alpha Trader": 1120 } -> list
-  const accountsByPlatform = Object.entries(ov.accounts_by_platform || {})
-    .map(([platform, count]) => ({ platform, count }));
+  const firing = models.filter((m) => m.count > 0);
 
   return {
-    kpiCards,
-    bySeverity: ov.by_severity || {},
-    byType,
-    bySource: ov.by_source || {},
-    matrix,
-    suppression,
-    signalsByCode,
-    accountsByPlatform,
-    totals: ov.totals || {},
+    totalFlags,
+    models,
+    firing,
+    quiet: models.filter((m) => m.count === 0),
+    top: firing[0] || null,
+    // raw map, so a caller can read one model directly: ov.counts.two_minute
+    counts: Object.fromEntries(counts),
+    // true when a response arrived but held no counts we could find — the
+    // dashboard says so instead of rendering an empty grid.
+    empty: counts.length === 0,
+    // the keys we did receive, so an unexpected shape is diagnosable on screen
+    receivedKeys: Object.keys(ov),
+    // the sidebar badge reads totals.flags
+    totals: { flags: totalFlags },
   };
 }
+
 
 export const typeHeadings = {
   'RT-1': 'Behaviour-based reverse trading — two unique users, opposite sides, same instrument.',
