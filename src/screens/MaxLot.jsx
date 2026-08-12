@@ -1,15 +1,22 @@
-import RuleFlags from './RuleFlags.jsx'
-import { fetchMaxLot, fetchMaxLotDetail } from '../api.js'
+import AutoFlags from './AutoFlags.jsx'
+import { fetchMaxLot } from '../api.js'
 
+// Sibling of Two Minute, whose payload turned out to be a flat per-trade row
+// rather than the scan envelope. This one's exact fields aren't confirmed yet,
+// so AutoFlags derives the columns from the first row and shows the remainder
+// on expand — no request beyond the list itself.
 export default function MaxLot(props) {
   return (
-    <RuleFlags
+    <AutoFlags
       title="Max Lot"
       subtitle="Orders placed above the plan's maximum permitted lot size."
-      kind="MAX LOT"
-      flagSource="max_lot"
       fetcher={fetchMaxLot}
-      detailFetcher={fetchMaxLotDetail}
+      searchPlaceholder="Search flag IDs…"
+      filters={[
+        { param: 'login_id', label: 'Login', type: 'text', placeholder: 'login id…', width: 120 },
+        { param: 'instrument', label: 'Instrument', type: 'text', placeholder: 'XAUUSD', upper: true, width: 110 },
+        { param: 'trade_date', label: 'Trade date', type: 'text', placeholder: 'YYYY-MM-DD', width: 120 },
+      ]}
       {...props}
     />
   )

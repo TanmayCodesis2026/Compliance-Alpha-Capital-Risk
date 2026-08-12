@@ -105,18 +105,22 @@ export default function ScanDetail({ data, kind }) {
         <Field label="Flagged at"><Mono>{fmtDate(data.created_at)}</Mono></Field>
       </FieldGrid>
 
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-3)', marginBottom: 9 }}>
-          {findingKey ? fieldLabel(findingKey) : 'Findings'} · {rows.length}
-        </div>
-        {rows.length === 0 ? (
-          <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>Nothing recorded on this scan.</div>
-        ) : (
+      {/* A flat payload — one trade per row, no findings array — is a valid
+          shape here (Two Minute is one), so an absent array is silence rather
+          than an empty section claiming nothing was recorded. */}
+      {rows.length > 0 && (
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-3)', marginBottom: 9 }}>
+            {findingKey ? fieldLabel(findingKey) : 'Findings'} · {rows.length}
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
             {rows.map((r, i) => <Finding key={r.id || r.tradeGroupId || r.positionId || i} row={r} index={i} />)}
           </div>
-        )}
-      </div>
+        </div>
+      )}
+      {rows.length === 0 && findingKey && (
+        <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>Nothing recorded on this scan.</div>
+      )}
     </div>
   )
 }

@@ -46,6 +46,7 @@ const MODES = {
         items: [
           { key: 'overview', label: 'Dashboard', badge: true },
           { key: 'account', label: 'Account Search' },
+          { key: 'matchOccurrences', label: 'Analysis' },
         ],
       },
       {
@@ -70,10 +71,10 @@ const MODES = {
         items: [
           { key: 'reverse', label: 'Reverse Trading' },
           { key: 'group', label: 'Group Trading' },
-          { key: 'groupOccasions', label: 'Group Occasions' },
-          { key: 'flagSignals', label: 'Flag Signals' },
-          { key: 'flagAccounts', label: 'Flag Accounts' },
-          { key: 'matchOccurrences', label: 'Match Occurrences' },
+          // { key: 'groupOccasions', label: 'Group Occasions' },
+          // { key: 'flagSignals', label: 'Flag Signals' },
+          // { key: 'flagAccounts', label: 'Flag Accounts' },
+          // { key: 'matchOccurrences', label: 'Match Occurrences' },
         ],
       },
       {

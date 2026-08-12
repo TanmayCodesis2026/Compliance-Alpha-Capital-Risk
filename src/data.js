@@ -108,7 +108,7 @@ export function fmtDuration(min) {
 }
 
 // "2026-06-20T13:22:42Z" -> "3h ago" / "2d ago"
-function fmtAgo(iso) {
+export function fmtAgo(iso) {
   if (!iso) return '—';
   const then = new Date(iso).getTime();
   if (isNaN(then)) return '—';
