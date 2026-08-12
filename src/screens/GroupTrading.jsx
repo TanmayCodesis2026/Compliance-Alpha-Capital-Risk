@@ -1,5 +1,6 @@
 import AutoFlags from './AutoFlags.jsx'
 import { fetchGroupTrading, fetchGroupTradingDetail } from '../api.js'
+import { SEVERITY_FILTER } from '../components/severityFilter.js'
 
 // GT — several accounts entering the same instrument together, either on the
 // same side (coordinated) or deliberately opposed.
@@ -13,6 +14,7 @@ export default function GroupTrading(props) {
       detailFetcher={fetchGroupTradingDetail}
       searchPlaceholder="Search flag IDs…"
       filters={[
+        SEVERITY_FILTER,
         { param: 'flag_type', label: 'Type', options: [
           { value: 'GT-1', label: 'GT-1', mono: true, color: 'var(--crit)', soft: 'var(--crit-soft)' },
           { value: 'GT-2', label: 'GT-2', mono: true, color: 'var(--high)', soft: 'var(--high-soft)' },

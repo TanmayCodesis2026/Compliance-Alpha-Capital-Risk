@@ -95,6 +95,15 @@ export default function AccountPicker({
     onSelect && onSelect(picked, row)
   }
 
+  // Reset the box and the parent's resolved account, so the dossier clears and
+  // the browsable account list comes back.
+  const clear = () => {
+    setInput('')
+    setSuggestions([])
+    setSuggOpen(false)
+    onSelect && onSelect('')
+  }
+
   const submit = (e) => { e.preventDefault(); setSuggOpen(false); onSelect && onSelect(input) }
 
   return (
@@ -108,9 +117,27 @@ export default function AccountPicker({
               onChange={(e) => { setInput(e.target.value); setSuggOpen(true) }}
               onFocus={() => setSuggOpen(true)}
               onBlur={() => setTimeout(() => setSuggOpen(false), 120)}
+              onKeyDown={(e) => { if (e.key === 'Escape') clear() }}
               placeholder={placeholder}
               style={{ border: 'none', background: 'transparent', outline: 'none', font: 'inherit', color: 'var(--text)', width: '100%', fontFamily: "'Geist Mono',monospace" }}
             />
+            {/* Clearing has to reset the parent too, not just the input: with a
+                resolved account still selected the dossier would stay on screen
+                next to an empty box. */}
+            {(input || value) && (
+              <button
+                type="button"
+                onClick={clear}
+                onMouseDown={(e) => e.preventDefault()} // keep focus so onBlur doesn't fire first
+                title="Clear search"
+                aria-label="Clear search"
+                style={{ flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, padding: 0, border: 'none', borderRadius: '50%', background: 'var(--border)', color: 'var(--text-2)', cursor: 'pointer', lineHeight: 1 }}
+              >
+                <svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+                  <path d="M1.5 1.5l7 7M8.5 1.5l-7 7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                </svg>
+              </button>
+            )}
           </div>
           {suggOpen && debouncedInput.length >= 2 && (
             <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 30, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 9, boxShadow: 'var(--shadow-lg, var(--shadow))', overflow: 'hidden', maxHeight: 280, overflowY: 'auto' }}>
