@@ -31,6 +31,9 @@ function widthFor(key, v) {
   if (/date$/i.test(key)) return 125
   if (/time$/i.test(key)) return 145
   if (/^flag_id$/i.test(key)) return 185
+  // composite ids (occurrence_id, group_key) run to 64+ chars; they are
+  // ellipsised either way, so give them enough width to stay recognisable
+  if (/^(group_key|occurrence_id)$/i.test(key) || String(v ?? '').length > 40) return 200
   if (/id$/i.test(key)) return 115
   if (isReasonKey(key)) return 260
   const len = String(v ?? '').length

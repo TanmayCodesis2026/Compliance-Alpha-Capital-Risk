@@ -9,10 +9,19 @@ import { fmtMoney } from '../data.js'
 // Components only; the value formatters live in scanFormat.js.
 
 // One labelled cell in a detail grid.
+//
+// The value wraps rather than running on: these panels carry 64-character group
+// hashes and composite occurrence ids, and a nowrap value in a grid track
+// overflows *on top of* the next cell rather than being clipped. `minWidth: 0`
+// is the other half — a grid item defaults to min-width:auto, which refuses to
+// shrink below its content and blows the track out.
+//
+// `overflowWrap: anywhere` (not `break-word`) is what lets an id with no spaces
+// or hyphens break at all.
 export const Field = ({ label, children }) => (
-  <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 100, flex: '1 0 auto' }}>
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0, flex: '1 1 auto' }}>
     <div style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, whiteSpace: 'nowrap' }}>{label}</div>
-    <div style={{ fontSize: 12.5, whiteSpace: 'nowrap' }}>{children ?? '—'}</div>
+    <div style={{ fontSize: 12.5, overflowWrap: 'anywhere', lineHeight: 1.45 }}>{children ?? '—'}</div>
   </div>
 )
 

@@ -73,11 +73,17 @@ const inlineDetail = (r) => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <FieldGrid>
+      {/* the occurrence id and group hash are 64+ chars — they get their own
+          wide tracks so they wrap over two lines rather than twelve */}
+      <FieldGrid min={320}>
         <Field label="Occurrence ID"><Mono>{r.occurrence_id || r.id}</Mono></Field>
         <Field label="Group key"><Mono>{r.group_key}</Mono></Field>
+      </FieldGrid>
+
+      <FieldGrid>
         <Field label="Pair"><Mono>{r.pair}</Mono></Field>
         <Field label="Instrument"><Mono>{r.instrument}</Mono></Field>
+        <Field label="Direction"><DirectionPill direction={r.direction} /></Field>
         <Field label="Day"><Mono>{fmtDay(r.day)}</Mono></Field>
         <Field label="Detected"><Mono>{fmtDate(r.created_at)}</Mono></Field>
       </FieldGrid>
@@ -112,13 +118,17 @@ const inlineDetail = (r) => {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {matches.map((m, i) => (
-              <div key={m.trade_id || i} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 11px', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-3)', fontFamily: "'Geist Mono',monospace" }}>#{i + 1}</span>
-                <Field label="Trade ID"><Mono>{m.trade_id}</Mono></Field>
-                <Field label="User"><Mono>{m.user_id}</Mono></Field>
-                <Field label="Account"><Mono>{m.account}</Mono></Field>
-                <Field label="Platform"><Mono>{m.platform}</Mono></Field>
-                <Field label="Direction"><DirectionPill direction={m.direction} /></Field>
+              <div key={m.trade_id || i} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 11px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                <span style={{ flex: 'none', fontSize: 10, fontWeight: 700, color: 'var(--text-3)', fontFamily: "'Geist Mono',monospace", paddingTop: 2 }}>#{i + 1}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <FieldGrid min={120}>
+                    <Field label="Trade ID"><Mono>{m.trade_id}</Mono></Field>
+                    <Field label="User"><Mono>{m.user_id}</Mono></Field>
+                    <Field label="Account"><Mono>{m.account}</Mono></Field>
+                    <Field label="Platform"><Mono>{m.platform}</Mono></Field>
+                    <Field label="Direction"><DirectionPill direction={m.direction} /></Field>
+                  </FieldGrid>
+                </div>
               </div>
             ))}
           </div>

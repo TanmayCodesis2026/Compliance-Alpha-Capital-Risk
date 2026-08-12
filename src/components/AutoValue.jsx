@@ -34,5 +34,11 @@ export default function AutoValue({ k, v, compact = false }) {
   }
 
   if (typeof v === 'object') return <Mono>{compact ? 'object' : JSON.stringify(v)}</Mono>
+
+  // In a table cell a long id is ellipsised by the column, so carry the full
+  // value in a tooltip — otherwise it is simply unreadable there.
+  if (compact && String(v).length > 22) {
+    return <span title={String(v)} style={{ fontFamily: "'Geist Mono',monospace" }}>{v}</span>
+  }
   return <Mono>{v}</Mono>
 }
