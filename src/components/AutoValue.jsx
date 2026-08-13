@@ -1,4 +1,4 @@
-import { fmtDate, fmtDay, fmtMt5 } from '../data.js'
+import { fmtDate, fmtDay, fmtMt5, isSeverityKey, severityStyle } from '../data.js'
 import { DirectionPill, Money, Mono, Pill } from './ScanFields.jsx'
 import { stripPositionId } from './scanFormat.js'
 import {
@@ -14,6 +14,18 @@ import {
 // renamed degrades to raw text instead of vanishing.
 export default function AutoValue({ k, v, compact = false }) {
   if (v === null || v === undefined || v === '') return <span style={{ color: 'var(--text-3)' }}>—</span>
+
+  // Severity is the field a reviewer triages by, so it carries its colour into
+  // the table rather than reading as ordinary text. Coloured text in a cell
+  // (rather than a filled pill) keeps the row height and column width honest.
+  if (isSeverityKey(k)) {
+    const sev = severityStyle(v)
+    const text = String(v).toUpperCase()
+    if (!sev) return <Mono>{text}</Mono>
+    return compact
+      ? <span style={{ fontWeight: 700, fontSize: 11, letterSpacing: '0.04em', color: sev.color }}>{text}</span>
+      : <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.03em', color: sev.color, background: sev.soft, padding: '2px 8px', borderRadius: 6 }}>{text}</span>
+  }
 
   if (isDirectionKey(k)) return <DirectionPill direction={v} />
   if (typeof v === 'boolean') return v ? <Pill tone="crit">YES</Pill> : <Pill>NO</Pill>

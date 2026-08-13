@@ -11,6 +11,25 @@ export const sevMeta = {
 // API severities are upper-case (CRITICAL/HIGH/MEDIUM); normalise to our keys.
 export const sevKey = (s) => (s || '').toLowerCase();
 
+// Colours for a severity as the API spells it. Beyond the CRITICAL/HIGH/MEDIUM
+// scale, some models report the verdict wording instead — VIOLATION is as bad
+// as CRITICAL, REVIEW sits at HIGH — so both map onto the same palette rather
+// than falling through to plain text.
+// Returns null for anything unrecognised, so a caller renders it uncoloured
+// instead of asserting a severity that isn't there.
+export function severityStyle(value) {
+  const k = sevKey(value);
+  if (sevMeta[k]) return sevMeta[k];
+  if (k === 'violation' || k === 'breach') return sevMeta.critical;
+  if (k === 'review' || k === 'warning') return sevMeta.high;
+  if (k === 'low' || k === 'info') return sevMeta.medium;
+  return null;
+}
+
+// Severity keys often arrive as a field named `severity`, but also as
+// `flag_severity`, `level`, or `risk_level`.
+export const isSeverityKey = (k) => /^(severity|flag_severity|level|risk_level|verdict)$/i.test(k || '');
+
 // The API double-encodes UTF-8 in some label strings: the original UTF-8 bytes
 // were decoded as Windows-1252, so "·" arrives as "Â·" and "≥" as "â‰¥".
 // Repair = reverse the CP1252 decode (char -> original byte) then decode UTF-8.

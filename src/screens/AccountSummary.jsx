@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { fetchAccountSummary } from '../api.js'
-import { fmtDate } from '../data.js'
+import { fmtDate, severityStyle } from '../data.js'
 import AccountPicker from '../components/AccountPicker.jsx'
 import { Field, FieldGrid, Mono, Pill } from '../components/ScanFields.jsx'
 
@@ -191,12 +191,19 @@ export default function AccountSummary({ initialLogin = '', onViewModel }) {
             {Object.keys(bySeverity).length > 0 && (
               <div style={{ borderTop: '1px solid var(--hair)', padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>By severity</span>
-                {Object.entries(bySeverity).map(([k, n]) => (
-                  <span key={k} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12 }}>
-                    <Pill tone={/crit/i.test(k) ? 'crit' : /high|violation/i.test(k) ? 'high' : 'neutral'}>{k}</Pill>
-                    <span style={{ fontFamily: "'Geist Mono',monospace", fontWeight: 600 }}>{n}</span>
-                  </span>
-                ))}
+                {/* same palette the tables use, so a MEDIUM here and a MEDIUM
+                    in a flag table are the same colour */}
+                {Object.entries(bySeverity).map(([k, n]) => {
+                  const sev = severityStyle(k)
+                  return (
+                    <span key={k} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12 }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.03em', padding: '2px 8px', borderRadius: 6, color: sev ? sev.color : 'var(--text-2)', background: sev ? sev.soft : 'var(--inset)' }}>
+                        {String(k).toUpperCase()}
+                      </span>
+                      <span style={{ fontFamily: "'Geist Mono',monospace", fontWeight: 600 }}>{n}</span>
+                    </span>
+                  )
+                })}
               </div>
             )}
           </div>
