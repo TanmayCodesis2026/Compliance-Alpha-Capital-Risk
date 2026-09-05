@@ -23,6 +23,7 @@ import UserTodProfile from './screens/UserTodProfile.jsx'
 import UserDurationProfile from './screens/UserDurationProfile.jsx'
 import NewsEvents from './screens/NewsEvents.jsx'
 import Logs from './screens/Logs.jsx'
+import CustomDash from './screens/CustomDash.jsx'
 import ComingSoon from './screens/ComingSoon.jsx'
 import Compliance1 from './screens/Compliance1.jsx'
 import Compliance from './screens/Compliance.jsx'
@@ -45,6 +46,10 @@ const MODES = {
         title: 'Overview',
         items: [
           { key: 'overview', label: 'Dashboard', badge: true },
+          // Dashboards authored outside this codebase and published to the dash
+          // bucket. Sits under Dashboard because it is the same question — "what
+          // does the book look like" — answered by a report rather than a screen.
+          { key: 'customDash', label: 'Custom Dash' },
           { key: 'account', label: 'Account Search' },
           { key: 'matchOccurrences', label: 'Analysis' },
         ],
@@ -126,6 +131,18 @@ const MODE_OF_SCREEN = Object.fromEntries(
   MODE_KEYS.flatMap((m) => screensOf(m).map((k) => [k, m])),
 )
 
+// ---- Custom Dash deep-link ----
+// Every other screen lives in React state alone, deliberately: the shell has no
+// router and nothing else needs a shareable URL. Custom Dash is the one
+// exception, because pinning an older version of a dashboard has to survive a
+// reload and be pasteable to someone else — that is what ?v= is for. `d` names
+// the dashboard, `v` pins a version; `v` alone means nothing and is ignored.
+function readDashUrl() {
+  const p = new URLSearchParams(window.location.search)
+  const slug = p.get('d') || ''
+  return { slug, version: slug ? p.get('v') || '' : '' }
+}
+
 const navSectionLabel = { fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', color: 'var(--text-3)', padding: '16px 10px 6px', textTransform: 'uppercase' }
 
 function NavButton({ item, active, onClick, badge }) {
@@ -197,7 +214,10 @@ export default function App() {
   const isMobile = useIsMobile()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [theme, setTheme] = useState('dark')
-  const [screen, setScreen] = useState(MODES.risk.home)
+  // A ?d= in the URL launches straight into that dashboard, so the landing
+  // screen is derived from the URL rather than fixed to the mode home.
+  const [dash, setDash] = useState(readDashUrl)
+  const [screen, setScreen] = useState(() => (readDashUrl().slug ? 'customDash' : MODES.risk.home))
   // Login is the launch screen: no token -> nothing but <Login/> renders.
   // useSession keeps the token refreshed and clears it when the session dies.
   const { idToken, signIn, signOut } = useSession()
@@ -208,8 +228,46 @@ export default function App() {
   const [overview, setOverview] = useState(null)
   const [overviewErr, setOverviewErr] = useState(null)
 
+  // Drop ?d=/?v= whenever the sidebar moves. Left behind, they would re-open a
+  // dashboard on the next reload from a screen that has nothing to do with it —
+  // and clicking "Custom Dash" itself should land on the grid, not on whichever
+  // dashboard was open last.
+  const clearDashUrl = () => {
+    setDash({ slug: '', version: '' })
+    const url = new URL(window.location.href)
+    if (!url.searchParams.has('d') && !url.searchParams.has('v')) return
+    url.searchParams.delete('d')
+    url.searchParams.delete('v')
+    window.history.replaceState({}, '', url)
+  }
+
   // sidebar nav: clear any dossier deep-link account so model screens open clean
-  const go = (s) => { setModelAccount(''); setScreen(s); setDrawerOpen(false); window.scrollTo && window.scrollTo(0, 0) }
+  const go = (s) => { setModelAccount(''); clearDashUrl(); setScreen(s); setDrawerOpen(false); window.scrollTo && window.scrollTo(0, 0) }
+
+  // Open a dashboard, or pin a version of the one already open. pushState (not
+  // replaceState) so Back steps out of a pinned version and then out of the
+  // dashboard, which is what the version picker leads a reader to expect.
+  const navigateDash = useCallback((slug, version) => {
+    setDash({ slug: slug || '', version: (slug && version) || '' })
+    const url = new URL(window.location.href)
+    if (slug) url.searchParams.set('d', slug)
+    else url.searchParams.delete('d')
+    if (slug && version) url.searchParams.set('v', version)
+    else url.searchParams.delete('v')
+    window.history.pushState({}, '', url)
+    window.scrollTo && window.scrollTo(0, 0)
+  }, [])
+
+  // Back/forward has to move the view too, or the URL and the frame drift apart.
+  useEffect(() => {
+    const onPop = () => {
+      const next = readDashUrl()
+      setDash(next)
+      if (next.slug) setScreen('customDash')
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
 
   // open the account dossier for a login (from a clickable cell)
   const openAccount = useCallback((login) => {
@@ -394,6 +452,7 @@ export default function App() {
         {screen === 'overview' && (
           <Overview navGo={navGo} ov={ovd} error={overviewErr} loading={!ov && !overviewErr} />
         )}
+        {screen === 'customDash' && <CustomDash slug={dash.slug} version={dash.version} onNavigate={navigateDash} />}
         {screen === 'account' && <AccountSummary initialLogin={accountQuery} onViewModel={openModelForAccount} />}
         {screen === 'twoMinute' && <TwoMinute onAccountClick={openAccount} initialAccount={modelAccount} />}
         {screen === 'weekend' && <WeekendHolding onAccountClick={openAccount} initialAccount={modelAccount} />}

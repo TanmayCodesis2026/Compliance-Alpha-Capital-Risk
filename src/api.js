@@ -253,3 +253,118 @@ export function fetchAdminCustomToken(email) {
 export function fetchLogs() {
   return get('/logs/')
 }
+
+// ---- Custom Dash (a third host: the dash API Worker) ----
+//
+// VITE_RISK_CUSTOM_DASH_BASE already includes the API's own prefix, so it ends
+// in .../v1/dash and the paths below append only /catalogue, /{slug}/versions
+// and /{slug}/view-url.
+//
+// These are the one deliberate exception to "everything goes through
+// authJson()". The app's bearer token belongs to the risk engine and the
+// customer backend; forwarding it to a third service would hand that host a
+// live session it has no business holding. authFetch also sends
+// `credentials: 'include'`, which a Worker answering
+// `Access-Control-Allow-Origin: *` would reject outright. So the dash API is
+// authenticated with its own read key instead, and the host must allow this
+// origin via CORS.
+//
+// READ THIS BEFORE TOUCHING THE KEY: Vite inlines every VITE_* var into the
+// bundle, so VITE_DASH_READ_KEY ships in plain text to every visitor and is
+// readable in devtools. It is therefore a public credential — whatever it can
+// read, anyone who loads this app can read, including the named account holders
+// inside the dashboards. That is the accepted trade for calling the API
+// straight from the browser; moving these three calls behind a server-side
+// proxy is the only way to keep the key private.
+const DASH_OG = import.meta.env.VITE_RISK_CUSTOM_DASH_BASE
+const DASH_RAW = trimSlash(import.meta.env.VITE_RISK_CUSTOM_DASH_BASE)
+const DASH_READ_KEY = import.meta.env.VITE_DASH_READ_KEY || ''
+
+// The Worker does not send Access-Control-Allow-Origin for localhost, so a
+// direct call from the dev server fails its preflight. In dev the same path is
+// requested under /dash-api instead, which vite.config.js forwards to the same
+// host — a same-origin request the browser never preflights. The path is taken
+// from the configured URL rather than hardcoded, so both halves stay driven by
+// the one env var.
+//
+// Dev only: a build has no proxy, and prod still needs the Worker to allow the
+// deployed origin.
+function devProxied(raw) {
+  try { return '/dash-api' + trimSlash(new URL(raw).pathname) } catch { return raw }
+}
+const DASH_BASE = import.meta.env.DEV && DASH_RAW ? devProxied(DASH_RAW) : DASH_RAW
+
+async function dashFetch(path, options = {}) {
+  // Vite inlines these at build time, so an unset var is a missing rebuild, not
+  // a missing runtime value — say so rather than letting it fail as a 401.
+  if (!DASH_BASE || !DASH_READ_KEY) {
+    const missing = [!DASH_BASE && 'VITE_RISK_CUSTOM_DASH_BASE', !DASH_READ_KEY && 'VITE_DASH_READ_KEY'].filter(Boolean)
+    throw new ApiError(`Custom Dash is not configured — set ${missing.join(' and ')}, then rebuild.`, 0)
+  }
+
+  let response
+  try {
+    response = await fetch(DASH_BASE + path, {
+      ...options,
+      headers: {
+        accept: 'application/json',
+        // Omitted rather than sent as "Bearer undefined" when unset: a missing
+        // key should read as unauthenticated, and the guard below names the
+        // actual problem instead of letting the API reject a literal string.
+        ...(DASH_READ_KEY ? { Authorization: `Bearer ${DASH_READ_KEY}` } : null),
+        ...(options.body ? { 'content-type': 'application/json' } : null),
+        ...(options.headers || {}),
+      },
+    })
+  } catch (e) {
+    // The browser reports a blocked CORS preflight and a dead host identically,
+    // so name both rather than guessing which one it was.
+    throw new ApiError(`Couldn’t reach the dash API — network or CORS. ${e?.message || ''}`.trim(), 0)
+  }
+
+  const text = await response.text().catch(() => '')
+  let body = null
+  try { body = text ? JSON.parse(text) : null } catch { /* not JSON */ }
+
+  if (!response.ok) {
+    console.error('Dash request failed', path, response.status, response.statusText, text)
+    // The dash API answers { error, message, request_id }; `message` is the
+    // human-readable half. `detail` keeps this aligned with the risk engine.
+    throw new ApiError(body?.detail || body?.message || body?.error || `Request failed: ${response.status} ${response.statusText}`, response.status)
+  }
+  return body
+}
+
+// GET {base}/catalogue -> { schema, generated_at, dashboards: [...] }
+export function fetchDashCatalogue() {
+  return dashFetch('/catalogue')
+}
+
+// GET {base}/{slug}/versions?limit=50
+//   -> { slug, current_version_id, versions: [...], next_cursor }
+// One generous page keeps the picker to a single round-trip; a dashboard with
+// more than 50 versions would come back with next_cursor set.
+export function fetchDashVersions(slug) {
+  return dashFetch(`/${encodeURIComponent(slug)}/versions?limit=50`)
+}
+
+// POST {base}/{slug}/view-url
+//   -> { url, version_id, expires_at }
+//
+// `url` points at the viewer Worker and carries a signed token in the path
+// (…/v/v1.<payload>.<sig>/index.html) that encodes the slug, the version and an
+// expiry — so it is a capability, not an address: it grants access on its own
+// and it stops working at `expires_at`. Treat it as short-lived, never cache or
+// store it, and re-request rather than reusing a stale one.
+//
+// `version_id` reports which version was actually served, which matters when no
+// version was asked for: it names whatever "current" resolved to.
+//
+// Omitting versionId asks for the current version; passing one pins that
+// version, which is how ?v= renders an older build.
+export function fetchDashViewUrl(slug, versionId) {
+  return dashFetch(`/${encodeURIComponent(slug)}/view-url`, {
+    method: 'POST',
+    body: JSON.stringify(versionId ? { version_id: versionId } : {}),
+  })
+}

@@ -18,4 +18,10 @@ export default defineConfig([
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
   },
+  {
+    // Vite's config is executed by Node, not shipped to the browser, so it
+    // reads `process.env` — undefined under the browser globals above.
+    files: ['vite.config.js'],
+    languageOptions: { globals: globals.node },
+  },
 ])
