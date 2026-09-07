@@ -21,7 +21,7 @@ const clamp2 = {
   fontSize: 12.5,
   color: 'var(--text-2)',
   lineHeight: 1.45,
-  minHeight: '2.9em', // reserve both lines so short and long tiles align
+  minHeight: '2.9em',
 }
 
 function StaleBadge({ hours }) {
