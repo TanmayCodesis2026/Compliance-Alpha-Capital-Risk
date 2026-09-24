@@ -43,6 +43,9 @@ const EVIDENCE_OPTIONS = [
   { value: 'cid', label: 'CID' },
 ]
 
+// Slice sentinel: "the last slice of whatever page loads", used by Prev/Last.
+const LAST_SLICE = -1
+
 const EMPTY_FILTERS = { search: '', evidence: 'all', from: '', to: '' }
 
 // Typing shouldn't fire a request per keystroke; tabs and dates apply at once.
@@ -230,7 +233,14 @@ function Compliance() {
   const [result, setResult] = useState({ query: null, data: null, error: '' })
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(25)
-  const [expanded, setExpanded] = useState({}) // rowKey -> open
+  // Which pageSize-row slice of the current server page is on screen. The server
+  // pages by account, but one account can flatten into many pairs, so a single
+  // server page may need several slices. LAST_SLICE resolves once rows arrive.
+  const [slice, setSlice] = useState(0)
+  // `expandAll` is the default open state and survives paging; `expanded` holds
+  // the rows the user flipped away from that default.
+  const [expandAll, setExpandAll] = useState(false)
+  const [expanded, setExpanded] = useState({}) // rowKey -> flipped from default
   const [filters, setFilters] = useState(EMPTY_FILTERS) // what the request carries
   const [searchInput, setSearchInput] = useState('')    // raw text box, debounced into filters
   const [focus, setFocus] = useState(null) // which toolbar field owns the focus ring
@@ -244,6 +254,7 @@ function Compliance() {
   const applyOnly = useCallback((next) => {
     setFilters({ ...EMPTY_FILTERS, ...next })
     setPage(1)
+    setSlice(0)
     setExpanded({})
   }, [])
 
@@ -281,36 +292,61 @@ function Compliance() {
   const isSearching = searchInput !== filters.search || (isFetching && Boolean(filters.search))
 
   // ---- pagination ----------------------------------------------------------
-  // `page` and `page_size` ride on every request, but a response can still carry
-  // more rows than a page holds — the endpoint is /all/, and one entry flattens
-  // into a row per counterparty — so the page is cut here too. Whatever the
-  // filters match, the table shows `pageSize` rows and no more.
+  // Two levels, because the server and the table count different things: the
+  // server pages by account (`page` / `page_size` on the request), while the
+  // table shows one row per pair. A page of accounts can flatten into more pairs
+  // than fit (one account with 42 counterparties is 42 rows), so the client cuts
+  // it into `pageSize`-row slices and the pager walks every slice of a server
+  // page before asking for the next one.
   //
-  // Which side owns the page numbers depends on what came back:
-  //   `count` in the envelope  -> the server paged; the slice is just a cap
+  // Whether another server page exists depends on what came back:
+  //   `count` in the envelope  -> server page count known
   //   only a `next` link       -> the server paged, last page unknown
-  //   neither                  -> unpaginated; the client cuts every page
+  //   neither                  -> unpaginated; the slices are the only pages
   const total = pickTotal(result.data)
-  const serverPaged = total !== null || hasNextLink(result.data)
-  const pageCount = total !== null
+  const serverPageCount = total !== null
     ? Math.max(1, Math.ceil(total / pageSize))
-    : serverPaged ? null : Math.max(1, Math.ceil(allRows.length / pageSize))
+    : hasNextLink(result.data) ? null : 1
+  const hasMoreServer = serverPageCount === null ? hasNextLink(result.data) : page < serverPageCount
 
-  const safePage = pageCount === null ? page : Math.min(page, pageCount)
-  const start = serverPaged ? 0 : (safePage - 1) * pageSize
+  const sliceCount = Math.max(1, Math.ceil(allRows.length / pageSize))
+  const safeSlice = slice === LAST_SLICE ? sliceCount - 1 : Math.min(slice, sliceCount - 1)
+  const start = safeSlice * pageSize
   const rows = allRows.slice(start, start + pageSize)
 
-  const canPrev = safePage > 1
-  const canNext = pageCount === null ? hasNextLink(result.data) : safePage < pageCount
+  const canPrev = safeSlice > 0 || page > 1
+  const canNext = safeSlice < sliceCount - 1 || hasMoreServer
+  const canLast = serverPageCount !== null && (page < serverPageCount || safeSlice < sliceCount - 1)
 
-  // Paging swaps the whole body, and row keys are positional, so expansions go.
-  const goPage = (n) => {
-    const next = pageCount === null ? Math.max(1, n) : Math.min(Math.max(1, n), pageCount)
-    if (next === safePage) return
-    setPage(next)
+  // Paging swaps the whole body, and row keys are positional, so per-row flips
+  // go; the expand-all default stays.
+  const goTo = (nextPage, nextSlice) => {
+    setPage(nextPage)
+    setSlice(nextSlice)
     setExpanded({})
   }
-  const changePageSize = (n) => { setPageSize(n); setPage(1); setExpanded({}) }
+  const goFirst = () => { if (canPrev) goTo(1, 0) }
+  const goPrev = () => {
+    if (safeSlice > 0) goTo(page, safeSlice - 1)
+    else if (page > 1) goTo(page - 1, LAST_SLICE)
+  }
+  const goNext = () => {
+    if (safeSlice < sliceCount - 1) goTo(page, safeSlice + 1)
+    else if (hasMoreServer) goTo(page + 1, 0)
+  }
+  const goLast = () => { if (canLast) goTo(serverPageCount, LAST_SLICE) }
+  const changePageSize = (n) => { setPageSize(n); goTo(1, 0) }
+
+  // With a single server page the slices are the pages; otherwise show both.
+  const pageLabel = serverPageCount === 1
+    ? `${safeSlice + 1} / ${sliceCount}`
+    : `${page}${serverPageCount === null ? '' : ` / ${serverPageCount}`}${sliceCount > 1 ? ` · ${safeSlice + 1}/${sliceCount}` : ''}`
+
+  const rowKeyOf = (row, index) => `${row.subject?.id ?? 'x'}-${row.counterparty?.id ?? 'y'}-${start + index}`
+  const isRowOpen = (rowKey) => expandAll !== Boolean(expanded[rowKey])
+  const expandableKeys = rows.flatMap((row, i) => (row.matchedFields.length ? [rowKeyOf(row, i)] : []))
+  const allOpen = expandableKeys.length > 0 && expandableKeys.every(isRowOpen)
+  const toggleAll = () => { setExpandAll(!allOpen); setExpanded({}) }
   // Both bounds move together — the picker never emits a half-applied range.
   const setDateRange = (from, to) => { setSearchInput(''); applyOnly({ from, to }) }
   const setEvidence = (evidence) => { setSearchInput(''); applyOnly({ evidence }) }
@@ -384,6 +420,19 @@ function Compliance() {
                 : `${total} result${total === 1 ? '' : 's'}`
               : ''}
         </div>
+
+        {/* Opens every row's evidence at once; stays on across pages until
+            collapsed, so reviewing a long list is paging, not clicking. */}
+        <button
+          onClick={toggleAll}
+          disabled={expandableKeys.length === 0}
+          aria-pressed={allOpen}
+          className="ghost-btn"
+          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, height: CONTROL_HEIGHT, padding: '0 12px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface)', color: expandableKeys.length === 0 ? 'var(--text-3)' : 'var(--text-2)', font: 'inherit', fontSize: 12.5, fontWeight: 600, cursor: expandableKeys.length === 0 ? 'default' : 'pointer', flex: 'none' }}
+        >
+          <span style={{ display: 'inline-block', transform: allOpen ? 'rotate(90deg)' : 'none', transition: 'transform .15s ease' }}>›</span>
+          {allOpen ? 'Collapse all evidence' : 'Expand all evidence'}
+        </button>
       </div>
 
       {errorMessage ? (
@@ -428,8 +477,8 @@ function Compliance() {
                 )}
 
                 {rows.map((row, index) => {
-                  const rowKey = `${row.subject?.id ?? 'x'}-${row.counterparty?.id ?? 'y'}-${start + index}`
-                  const isOpen = !!expanded[rowKey]
+                  const rowKey = rowKeyOf(row, index)
+                  const isOpen = row.matchedFields.length > 0 && isRowOpen(rowKey)
 
                   return (
                     <Fragment key={rowKey}>
@@ -546,16 +595,16 @@ function Compliance() {
             </label>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <button onClick={() => goPage(1)} disabled={!canPrev} style={pagerBtn(!canPrev)}>« First</button>
-              <button onClick={() => goPage(page - 1)} disabled={!canPrev} style={pagerBtn(!canPrev)}>‹ Prev</button>
+              <button onClick={goFirst} disabled={!canPrev} style={pagerBtn(!canPrev)}>« First</button>
+              <button onClick={goPrev} disabled={!canPrev} style={pagerBtn(!canPrev)}>‹ Prev</button>
               <span style={{ color: 'var(--text-2)', fontSize: 12, padding: '0 4px', fontFamily: "'Geist Mono',monospace" }}>
-                {page}{pageCount === null ? '' : ` / ${pageCount}`}
+                {pageLabel}
               </span>
-              <button onClick={() => goPage(page + 1)} disabled={!canNext} style={pagerBtn(!canNext)}>Next ›</button>
+              <button onClick={goNext} disabled={!canNext} style={pagerBtn(!canNext)}>Next ›</button>
               {/* Jumping to the last page needs a total; without one, there's no
                   last page number to jump to. */}
-              {pageCount !== null && (
-                <button onClick={() => goPage(pageCount)} disabled={!canNext} style={pagerBtn(!canNext)}>Last »</button>
+              {serverPageCount !== null && (
+                <button onClick={goLast} disabled={!canLast} style={pagerBtn(!canLast)}>Last »</button>
               )}
             </div>
           </div>
