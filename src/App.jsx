@@ -22,6 +22,8 @@ import MatchOccurrences from './screens/MatchOccurrences.jsx'
 import UserTodProfile from './screens/UserTodProfile.jsx'
 import UserDurationProfile from './screens/UserDurationProfile.jsx'
 import NewsEvents from './screens/NewsEvents.jsx'
+import MaxRisk from './screens/MaxRisk.jsx'
+import SystemHealth from './screens/SystemHealth.jsx'
 import Logs from './screens/Logs.jsx'
 import CustomDash from './screens/CustomDash.jsx'
 import ComingSoon from './screens/ComingSoon.jsx'
@@ -63,6 +65,8 @@ const MODES = {
           { key: 'weekend', label: 'Weekend Holding' },
           { key: 'onePercent', label: 'One Percent' },
           { key: 'maxLot', label: 'Max Lot' },
+          // under review with the client — the screen says so
+          { key: 'maxRisk', label: 'Max Risk', tag: 'review' },
           { key: 'minDays', label: 'Minimum Trading Days' },
           { key: 'news', label: 'News Trading' },
           { key: 'gambling', label: 'Gambling' },
@@ -93,7 +97,10 @@ const MODES = {
       },
       {
         title: 'Reference',
-        items: [{ key: 'events', label: 'News Events' }],
+        items: [
+          { key: 'events', label: 'News Events' },
+          { key: 'health', label: 'System Health' },
+        ],
       },
     ],
     // Routable but not linked from the sidebar.
@@ -283,7 +290,7 @@ export default function App() {
   const openModelForAccount = useCallback((modelKey, login) => {
     const map = {
       two_minute: 'twoMinute', weekend_holding: 'weekend', one_percent: 'onePercent',
-      max_lot: 'maxLot', minimum_trading_days: 'minDays', news_trading: 'news',
+      max_lot: 'maxLot', max_risk: 'maxRisk', minimum_trading_days: 'minDays', news_trading: 'news',
       gambling: 'gambling', order_book_spam: 'obs',
       reverse_trading: 'reverse', group_trading: 'group',
     }
@@ -442,7 +449,9 @@ export default function App() {
           <div style={{ flex: 1 }} />
           <div style={{ display: isMobile ? 'none' : 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: 'var(--text-2)', padding: '4px 11px', border: '1px solid var(--border)', borderRadius: 6 }}>
             <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--ok)', animation: 'pulse 1.8s ease-in-out infinite', flex: 'none' }} />
-            Live · <span style={{ fontFamily: "'Geist Mono',monospace" }}>{openFlagsBadge}</span> flags
+            {/* overview.unit is a full sentence ("accounts with a breach (RT/GT:
+                flags)") — too long for the topbar, so it lives on the dashboard */}
+            Live · <span style={{ fontFamily: "'Geist Mono',monospace" }}>{openFlagsBadge}</span> flagged
           </div>
           <button className="theme-btn" onClick={toggleTheme} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', border: '1px solid var(--border)', background: 'var(--surface)', borderRadius: 6, cursor: 'pointer', font: 'inherit', fontSize: 12, fontWeight: 500, color: 'var(--text-2)' }}>
             <span style={{ width: 13, height: 13, borderRadius: '50%', border: '2px solid currentColor', background: 'linear-gradient(90deg, currentColor 50%, transparent 50%)', display: 'inline-block' }} />{themeLabel}
@@ -458,6 +467,7 @@ export default function App() {
         {screen === 'weekend' && <WeekendHolding onAccountClick={openAccount} initialAccount={modelAccount} />}
         {screen === 'onePercent' && <OnePercent onAccountClick={openAccount} initialAccount={modelAccount} />}
         {screen === 'maxLot' && <MaxLot onAccountClick={openAccount} initialAccount={modelAccount} />}
+        {screen === 'maxRisk' && <MaxRisk onAccountClick={openAccount} initialAccount={modelAccount} />}
         {screen === 'minDays' && <MinimumTradingDays onAccountClick={openAccount} initialAccount={modelAccount} />}
         {screen === 'news' && <NewsTrading onAccountClick={openAccount} initialAccount={modelAccount} />}
         {screen === 'gambling' && <Gambling onAccountClick={openAccount} initialAccount={modelAccount} />}
@@ -473,6 +483,7 @@ export default function App() {
         {screen === 'compliance1' && <Compliance1/>}
         {screen === 'compliance' && <Compliance/>}
         {screen === 'events' && <NewsEvents />}
+        {screen === 'health' && <SystemHealth />}
         {screen === 'logs' && <Logs />}
         {screen === 'history' && (
           <ComingSoon title="Run History" />

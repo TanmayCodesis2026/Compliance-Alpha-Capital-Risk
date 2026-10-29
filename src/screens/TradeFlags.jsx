@@ -44,7 +44,14 @@ import { fetchTradesByIds, ApiError } from '../api.js'
 //                          surface top-level fields (e.g. Daily Report's
 //                          report_date/outstanding_unreviewed) that this
 //                          component doesn't otherwise expose.
-export default function TradeFlags({ title, subtitle, fetcher, columns, searchPlaceholder = 'Search flag IDs…', detailFetcher, detailIdOf, renderDetail, inlineDetail, filters = [], onAccountClick, initialAccount = '', tradeFields, tradeIdOf, tradeFetcher = fetchTradesByIds, flagSource, onData }) {
+//   actions                (optional) -> node beside the title (e.g. "Add speech")
+//   banner                 (optional) -> node between the title and the toolbar
+//                          (a warning, a health strip)
+//   emptyText              (optional) -> what an empty result says
+export default function TradeFlags({ title, subtitle, fetcher, columns, searchPlaceholder = 'Search flag IDs…', detailFetcher, detailIdOf, renderDetail, inlineDetail, filters = [], onAccountClick, initialAccount = '', tradeFields, tradeIdOf, tradeFetcher = fetchTradesByIds, flagSource, onData, actions, banner, emptyText = 'No flags found.' }) {
+  // A deep link filters on whichever account field this screen's API takes:
+  // the per-login rule tables filter on login_id, the rest on account_name.
+  const accountParam = filters.some((f) => f.param === 'login_id') ? 'login_id' : 'account_name'
   // cache/React key for a row — most flag models have a numeric `id`, but
   // aggregate rows (e.g. Daily Report, which merges all 8 flag types and
   // only carries flag_source/flag_id) don't. Falling back to row.id alone
@@ -64,16 +71,16 @@ export default function TradeFlags({ title, subtitle, fetcher, columns, searchPl
   const [pageSize, setPageSize] = useState(25)
   const [search, setSearch] = useState('')
   const [debounced, setDebounced] = useState('')
-  const [filterVals, setFilterVals] = useState(initialAccount ? { account_name: initialAccount } : {}) // param -> value ('' = all)
-  const [debFilters, setDebFilters] = useState(initialAccount ? { account_name: initialAccount } : {}) // debounced copy for fetching
+  const [filterVals, setFilterVals] = useState(initialAccount ? { [accountParam]: initialAccount } : {}) // param -> value ('' = all)
+  const [debFilters, setDebFilters] = useState(initialAccount ? { [accountParam]: initialAccount } : {}) // debounced copy for fetching
 
   // when deep-linked from the account dossier, seed/replace the account filter
   useEffect(() => {
     if (initialAccount) {
-      setFilterVals((m) => ({ ...m, account_name: initialAccount }))
-      setDebFilters((m) => ({ ...m, account_name: initialAccount }))
+      setFilterVals((m) => ({ ...m, [accountParam]: initialAccount }))
+      setDebFilters((m) => ({ ...m, [accountParam]: initialAccount }))
     }
-  }, [initialAccount])
+  }, [initialAccount, accountParam])
 
   // debounce search + filter values so typing doesn't fire a request per keystroke
   useEffect(() => {
@@ -216,10 +223,15 @@ export default function TradeFlags({ title, subtitle, fetcher, columns, searchPl
 
   return (
     <section style={{ padding: '24px 30px 46px', maxWidth: 1380, margin: '0 auto', width: '100%' }}>
-      <div style={{ marginBottom: 18 }}>
-        <h1 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em' }}>{title}</h1>
-        <div style={{ color: 'var(--text-2)', fontSize: 13 }}>{subtitle} <span style={{ fontFamily: "'Geist Mono',monospace", color: 'var(--text-3)' }}>{total.toLocaleString()}</span> total.</div>
+      <div style={{ marginBottom: 18, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+        <div>
+          <h1 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em' }}>{title}</h1>
+          <div style={{ color: 'var(--text-2)', fontSize: 13 }}>{subtitle} <span style={{ fontFamily: "'Geist Mono',monospace", color: 'var(--text-3)' }}>{total.toLocaleString()}</span> total.</div>
+        </div>
+        {actions && <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>{actions}</div>}
       </div>
+
+      {banner && <div style={{ marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>{banner}</div>}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, maxWidth: 360, background: 'var(--inset)', border: '1px solid var(--border)', borderRadius: 9, padding: '7px 11px' }}>
@@ -255,7 +267,7 @@ export default function TradeFlags({ title, subtitle, fetcher, columns, searchPl
 
       {error && (
         <div style={{ marginBottom: 14, padding: '12px 14px', background: 'var(--crit-soft)', border: '1px solid color-mix(in srgb,var(--crit) 25%,transparent)', borderRadius: 9, fontSize: 12.5, color: 'var(--text)' }}>
-          <b>Couldn’t load flags.</b> <span style={{ color: 'var(--text-2)' }}>{error}</span>
+          <b>Couldn’t load {String(title || 'rows').toLowerCase()}.</b> <span style={{ color: 'var(--text-2)' }}>{error}</span>
         </div>
       )}
 
@@ -324,7 +336,7 @@ export default function TradeFlags({ title, subtitle, fetcher, columns, searchPl
           </div>
         </div>
         {!loading && total === 0 && (
-          <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>No flags found.</div>
+          <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>{emptyText}</div>
         )}
         {!loading && total > 0 && <Pagination pageInfo={pageInfo} />}
       </div>

@@ -283,8 +283,10 @@ export function detailSignals(detail) {
 }
 
 // ---- /api/overview/ ----
-// The endpoint returns one flat count per detection model:
-//   { "two_minute": 21, "order_book_spam": 382, "news_trading": 460, ... }
+// The endpoint returns one count per detection model under `counts` — the
+// number of ACCOUNTS with a breach of that rule (RT/GT: flags), not rows:
+//   { counts: { news_trading: 12, two_minute: null, … }, total, unit,
+//     two_minute_note, max_risk_note, validation_note }
 // so everything derived here is a rollup of those counts. Models the UI has a
 // dedicated screen for carry `screen`; the rest render as read-only counters.
 const MODEL_META = {
@@ -293,11 +295,15 @@ const MODEL_META = {
   order_book_spam:      { label: 'Order Book Spam',      screen: 'obs',        color: 'var(--accent)' },
   news_trading:         { label: 'News Trading',         screen: 'news',       color: 'var(--accent)' },
   gambling:             { label: 'Gambling',             screen: 'gambling',   color: 'var(--accent)' },
-  two_minute:           { label: 'Two Minute',           screen: 'twoMinute',  color: 'var(--accent)' },
+  two_minute:           { label: 'Two Minute',           screen: 'twoMinute',  color: 'var(--accent)', noteKey: 'two_minute_note' },
   weekend_holding:      { label: 'Weekend Holding',      screen: 'weekend',    color: 'var(--accent)' },
   one_percent:          { label: 'One Percent',          screen: 'onePercent', color: 'var(--accent)' },
   max_lot:              { label: 'Max Lot',              screen: 'maxLot',     color: 'var(--accent)' },
-  minimum_trading_days: { label: 'Minimum Trading Days', screen: 'minDays',    color: 'var(--accent)' },
+  // A payout note, not a rule breach (§3.6).
+  minimum_trading_days: { label: 'Minimum Trading Days', screen: 'minDays',    color: 'var(--accent)', unit: 'accounts not met' },
+  // The count arrives with a note that the rule is under review with the
+  // client, and Two Minute's with how it was approximated.
+  max_risk:             { label: 'Max Risk',             screen: 'maxRisk',    color: 'var(--accent)', unit: 'accounts (under review)', noteKey: 'max_risk_note' },
 };
 
 // "some_new_rule" -> "Some New Rule", so a model added server-side still shows
@@ -346,39 +352,64 @@ export function resolveCounts(payload) {
   return [];
 }
 
+// The current /api/overview/ shape: `counts` is accounts with a breach per rule
+// (RT/GT: flags), and a count is null when its source (Mongo, prod) could not
+// be read. resolveCounts drops non-numbers, which would turn "unknown" into
+// "absent" — so the documented map is read directly, nulls kept.
+function overviewCounts(ov) {
+  const c = ov.counts;
+  if (c && typeof c === 'object' && !Array.isArray(c)) {
+    const entries = Object.entries(c).filter(([, v]) => v === null || (typeof v === 'number' && isFinite(v)));
+    if (entries.length) return entries;
+  }
+  return resolveCounts(ov);
+}
+
 export function decorateOverview(ov) {
   if (!ov) return null;
 
   // Only numeric fields count: a nested object or timestamp alongside them is
-  // ignored rather than added into the total as NaN.
-  const counts = resolveCounts(ov);
-  const totalFlags = counts.reduce((a, [, v]) => a + v, 0);
-  const busiest = Math.max(1, ...counts.map(([, v]) => v));
+  // ignored rather than added into the total as NaN. A null count stays in the
+  // list (shown as unavailable) but is left out of every sum.
+  const counts = overviewCounts(ov);
+  const known = counts.filter(([, v]) => v !== null);
+  const summed = known.reduce((a, [, v]) => a + v, 0);
+  const totalFlags = typeof ov.total === 'number' ? ov.total : summed;
+  const busiest = Math.max(1, ...known.map(([, v]) => v));
 
   const models = counts
     .map(([key, count]) => {
       const meta = MODEL_META[key] || {};
+      const unavailable = count === null;
       return {
         key,
         count,
+        unavailable,
         label: meta.label || titleCase(key),
         screen: meta.screen || null,
         color: meta.color || 'var(--accent)',
+        // what one unit of this count is — MTD counts a payout note, not a breach
+        unit: meta.unit || 'accounts with a breach',
+        note: (meta.noteKey && ov[meta.noteKey]) || null,
         // bar width is relative to the busiest model, so a 3 next to a 460 is
         // still visible; `share` is the honest proportion of the total.
-        barPct: Math.round((count / busiest) * 100),
-        share: totalFlags ? (count / totalFlags) * 100 : 0,
+        barPct: unavailable ? 0 : Math.round((count / busiest) * 100),
+        share: !unavailable && summed ? (count / summed) * 100 : 0,
       };
     })
-    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+    // unavailable last, so a rule that could not be counted never reads as the busiest
+    .sort((a, b) => (a.unavailable - b.unavailable) || (b.count ?? 0) - (a.count ?? 0) || a.label.localeCompare(b.label));
 
   const firing = models.filter((m) => m.count > 0);
 
   return {
     totalFlags,
+    unit: ov.unit || 'accounts with a breach',
+    validationNote: ov.validation_note || null,
     models,
     firing,
     quiet: models.filter((m) => m.count === 0),
+    unavailable: models.filter((m) => m.unavailable),
     top: firing[0] || null,
     // raw map, so a caller can read one model directly: ov.counts.two_minute
     counts: Object.fromEntries(counts),

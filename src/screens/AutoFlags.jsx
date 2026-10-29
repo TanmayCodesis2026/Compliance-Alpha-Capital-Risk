@@ -106,7 +106,7 @@ function rowDetail(row, shownKeys) {
 export default function AutoFlags({
   title, subtitle, kind, fetcher, detailFetcher, detailIdOf,
   columns: fixedColumns, filters = [], searchPlaceholder = 'Search…',
-  onAccountClick, initialAccount,
+  onAccountClick, initialAccount, actions, banner, emptyText,
 }) {
   const [cols, setCols] = useState(fixedColumns || [])
 
@@ -130,6 +130,9 @@ export default function AutoFlags({
       searchPlaceholder={searchPlaceholder}
       onAccountClick={onAccountClick}
       initialAccount={initialAccount}
+      actions={actions}
+      banner={banner}
+      emptyText={emptyText}
       // with a detail endpoint the panel shows the fetched payload; without one
       // it shows the rest of the row
       {...(detailFetcher

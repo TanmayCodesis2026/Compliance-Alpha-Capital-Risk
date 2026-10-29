@@ -1,21 +1,25 @@
 import AutoFlags from './AutoFlags.jsx'
 import { fetchOnePercent } from '../api.js'
+import { breachedFilter, loginFilter, platformFilter, statusFilter } from './ruleFilters.js'
 
-// Sibling of Two Minute, whose payload turned out to be a flat per-trade row
-// rather than the scan envelope. This one's exact fields aren't confirmed yet,
-// so AutoFlags derives the columns from the first row and shows the remainder
-// on expand — no request beyond the list itself.
+// GET /api/one-percent/ — one row per account over the full history
+// (`1pct:<login>:full`) by default. scope=all also lists the per-period rows
+// the account reviews stored. Columns are derived from the first row
+// (AutoFlags); the rest shows on expand.
 export default function OnePercent(props) {
   return (
     <AutoFlags
       title="One Percent"
-      subtitle="Single trades risking more than one percent of the account balance."
+      subtitle="Realized losses and cool-off breaches over one percent of the account balance, one row per account."
       fetcher={fetchOnePercent}
       searchPlaceholder="Search flag IDs…"
+      emptyText="No accounts found."
       filters={[
-        { param: 'login_id', label: 'Login', type: 'text', placeholder: 'login id…', width: 120 },
-        { param: 'instrument', label: 'Instrument', type: 'text', placeholder: 'XAUUSD', upper: true, width: 110 },
-        { param: 'trade_date', label: 'Trade date', type: 'text', placeholder: 'YYYY-MM-DD', width: 120 },
+        loginFilter,
+        breachedFilter(),
+        statusFilter,
+        { param: 'scope', label: 'Rows', options: [{ value: 'all', label: 'Every stored scope' }] },
+        platformFilter,
       ]}
       {...props}
     />

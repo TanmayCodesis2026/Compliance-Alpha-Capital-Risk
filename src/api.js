@@ -14,6 +14,7 @@
 // single 401 is recovered by a refresh — screens never call fetch() directly.
 
 import { authJson } from './auth.js'
+import { scopeParams } from './scope.js'
 
 const trimSlash = (u) => (u || '').replace(/\/$/, '')
 
@@ -25,13 +26,33 @@ const ADMIN_BASE = trimSlash(import.meta.env.VITE_BASE_URL)
 // A failed request carries its status so callers can tell "the backend is down"
 // (retry later) from "you asked for something that doesn't exist" (don't).
 export class ApiError extends Error {
-  constructor(message, status) {
+  constructor(message, status, body = null) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    // The parsed error body, when there was one: 300 carries `candidates[]`,
+    // 404 `status: "not_found"`, 503 `validation_note`.
+    this.body = body
     // 0 = network/CORS failure; 5xx = backend is up but unhealthy. Both mean
     // "try again later" rather than "this request was wrong".
     this.isUnavailable = status === 0 || status >= 500
+  }
+
+  // A login fragment that matched several accounts (300).
+  get isAmbiguous() { return this.status === 300 }
+  get candidates() { return this.body?.candidates || [] }
+
+  // Form validation answers { "<field>": ["message", …] }. Non-field keys
+  // (`detail`, `field`, context such as `login_id`) are left out; a database
+  // refusal names its column in `field`, so it is folded back in under that name.
+  get fieldErrors() {
+    if (this.status !== 400 || !this.body || typeof this.body !== 'object') return {}
+    const out = {}
+    for (const [k, v] of Object.entries(this.body)) {
+      if (Array.isArray(v) && v.every((m) => typeof m === 'string')) out[k] = v
+    }
+    if (this.body.field && this.body.detail) out[this.body.field] = [this.body.detail]
+    return out
   }
 }
 
@@ -55,27 +76,43 @@ async function request(url, options) {
     return await authJson(url, options)
   } catch (e) {
     if (e?.name === 'SessionExpiredError' || e instanceof ApiError) throw e
-    const status = Number(/\b(\d{3})\b/.exec(e?.message || '')?.[1] || 0)
-    throw new ApiError(e?.message || 'Request failed', status)
+    // authJson stamps the status; the regex is the fallback for a plain Error.
+    const status = e?.status ?? Number(/\b(\d{3})\b/.exec(e?.message || '')?.[1] || 0)
+    throw new ApiError(e?.message || 'Request failed', status, e?.body ?? null)
   }
 }
 
+// The risk engine signals an expired token with 401 only; its 403 means "no
+// permission" (no risk access, no news-editor rights) and must not end the
+// session. See authFetch.
+const RISK_AUTH = { authFailureStatuses: [401] }
+
 // Risk engine (the default for everything below) …
-const get = (path, params) => request(buildUrl(RISK_BASE, path, params))
-const post = (path, body) => request(buildUrl(RISK_BASE, path), { method: 'POST', body: JSON.stringify(body) })
+const get = (path, params) => request(buildUrl(RISK_BASE, path, params), RISK_AUTH)
+const post = (path, body, params) => request(buildUrl(RISK_BASE, path, params), { ...RISK_AUTH, method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) })
+const patch = (path, body) => request(buildUrl(RISK_BASE, path), { ...RISK_AUTH, method: 'PATCH', body: JSON.stringify(body) })
 // … and the customer backend, for the handful of admin endpoints.
 const adminGet = (path, params) => request(buildUrl(ADMIN_BASE, path, params))
+
+// Logins can carry '#', '@', '.', '+' ("D#2496320"), so a login in a path
+// segment is always encoded. Query values are encoded by URLSearchParams.
+const seg = (v) => encodeURIComponent(String(v))
 
 // GET /api/overview/
 export function fetchOverview() {
   return get('/api/overview/')
 }
 
-// GET /api/account-summary/?login_id=… — per-login dossier: the resolved
-// account record(s) plus a summary { total_flags, by_type, by_severity }.
-// Keyed on login_id, the same identifier every scan endpoint reports against.
-export function fetchAccountSummary(loginId, opts = {}) {
-  return get('/api/account-summary/', { login_id: loginId, ...opts })
+// GET /api/account-summary/?login_id=…&scope=… — the per-scope scoreboard:
+//   { login_id, resolved_logins, status, account, scope, periods, review,
+//     two_minute, summary: { total_breaches, by_type, rules, by_severity, … },
+//     notes, validation_note, generated_at }
+// `summary.total_flags` is now an alias of total_breaches — breaches of the
+// tiered rules in the scope, not row counts. 300 = ambiguous fragment
+// (ApiError.candidates), 404 = unknown login, 503 = prod unreachable.
+// `scope` is a scope object from scope.js.
+export function fetchAccountSummary(loginId, scope, opts = {}) {
+  return get('/api/account-summary/', { login_id: loginId, ...scopeParams(scope), ...opts })
 }
 
 // GET /api/flags/{source}/{id}/
@@ -169,7 +206,20 @@ export function fetchMaxLotDetail(flagId) {
   return get(`/api/max-lot/${encodeURIComponent(flagId)}/`)
 }
 
+// GET /api/max-risk/ — one row per account; the rule is under review with the
+// client, so screens label it that way rather than as a breach.
+// opts: { login_id, plan, scan_date, breached, status, tier, trading_platform,
+//         date_from, date_to, ordering, page, page_size }
+export function fetchMaxRisk(opts = {}) {
+  return get('/api/max-risk/', opts)
+}
+// Accepts the flag id or the bare login.
+export function fetchMaxRiskDetail(flagIdOrLogin) {
+  return get(`/api/max-risk/${seg(flagIdOrLogin)}/`)
+}
+
 // GET /api/minimum-trading-days/ — accounts short of the required trading days.
+// `breached=true` means "not met": a payout note, never a rule breach.
 export function fetchMinimumTradingDays(opts = {}) {
   return get('/api/minimum-trading-days/', opts)
 }
@@ -201,11 +251,15 @@ export function fetchOrderBookSpamDetail(flagId) {
   return get(`/api/order-book-spam/${encodeURIComponent(flagId)}/`)
 }
 // GET /api/news-events/ — the economic calendar. Rows carry event_name / type /
-// currency / event_date / start_time / gmt_offset / speaker / source.
-// opts: { search, type, currency, event_date, ordering, page, page_size }
+// currency / event_date / start_time / gmt_offset / speaker / source, plus the
+// audit fields (created_by, updated_by, deleted_at, is_deleted,
+// excluded_from_news_check).
+// opts: { search, type, event_date, from, to, currency, speaker, event_name,
+//         source, created_by, include_deleted, ordering, page, page_size }
+// Soft-deleted rows are hidden unless include_deleted=true.
 //
-// GET /api/news-events/{id}/ — one event, keyed on the row's UUID. Same shape
-// as the list row (see fetchNewsEventDetail below).
+// GET /api/news-events/{id}/ — one event; a deleted one comes back with
+// is_deleted: true.
 export function fetchNewsEvents(opts = {}) {
   return get('/api/news-events/', opts)
 }
@@ -213,10 +267,156 @@ export function fetchNewsEventDetail(id) {
   return get(`/api/news-events/${encodeURIComponent(id)}/`)
 }
 
-// GET /api/accounts/ — account autocomplete. `search` under 2 chars is not sent
-// by the caller; `phase` narrows to e.g. qualified accounts. -> { results, has_next }
+// ---- speech form (writes need staff or a news-editor group; else 403) ----
+// Every write answers { event, warnings[] } (delete/restore: { event }).
+// Build bodies with newsEventForm.js so they match the server's rules.
+
+// GET /api/news-events/defaults/?date= -> { date, gmt_offset, type, source }
+export function fetchNewsEventDefaults(date) {
+  return get('/api/news-events/defaults/', { date })
+}
+// 201 -> { event, warnings }; 400 -> field errors (ApiError.fieldErrors)
+export function createNewsEvent(body) {
+  return post('/api/news-events/', body)
+}
+// Send only the changed fields; `type` cannot change and a deleted event must
+// be restored first (both 400).
+export function updateNewsEvent(id, changes) {
+  return patch(`/api/news-events/${seg(id)}/`, changes)
+}
+// Soft delete; 400 if already deleted.
+export function deleteNewsEvent(id) {
+  return post(`/api/news-events/${seg(id)}/delete/`)
+}
+// 400 if not deleted.
+export function restoreNewsEvent(id) {
+  return post(`/api/news-events/${seg(id)}/restore/`)
+}
+// -> { event, count, history: [{ action, changed_by, changed_at, old_row, new_row }] }, oldest first
+export function fetchNewsEventHistory(id) {
+  return get(`/api/news-events/${seg(id)}/history/`)
+}
+
+// GET /api/account-search/ — the account directory. `search` under 2 chars is
+// not sent by the caller; `phase` narrows to e.g. qualified accounts.
+// -> { results, has_next }
+//
+// An exact single-login match on page 1 also builds the whole account page AND
+// queues a re-check of every rule — so anything that is not a deliberate
+// search-submit (type-ahead, the browsable list) must pass review=false. That
+// is the default here; searchAccountWithReview below is the one opt-in.
 export function fetchAccountSearch(search, opts = {}) {
-  return get('/api/account-search/', { search, ...opts })
+  return get('/api/account-search/', { search, review: false, ...opts })
+}
+
+// Search-submit. On an exact match the response carries `review` (the same
+// payload as fetchAccountReview) or `review_note` when the page could not be
+// built; otherwise it is a plain directory listing.
+export function searchAccountWithReview(search, scope) {
+  return get('/api/account-search/', { search, ...scopeParams(scope) })
+}
+
+// ---- account page (T21 / T22) ----
+
+// GET /api/account-review/ — the account page:
+//   { login_id, account, scope, periods, period_profit, review, refreshing,
+//     recheck: { task_id, sent, reused, note }, notes, generated_at }
+// `refresh: false` only reads the stored review; leaving it out also queues a
+// re-check of that scope.
+export function fetchAccountReview(loginId, scope, { refresh = true } = {}) {
+  return get('/api/account-review/', { login_id: loginId, ...scopeParams(scope), refresh: refresh ? undefined : false })
+}
+
+// The two calls below are in the spec but NOT in the current backend build
+// ("no re-check queue in this build" — the Postman collection): there the
+// page is a pure read and carries no `refreshing` / `recheck`, so
+// useAccountReview never starts polling. Don't surface "Re-check now" until
+// the queue ships.
+//
+// POST /api/account-review/recheck/ — "Re-check now". 202 when a task was
+// sent, 200 when not (de-duplicated or rate-limited: `recheck.note` says why).
+// -> { login_id, scope, refreshing, recheck, period_profit, notes }
+export function postAccountRecheck(loginId, scope) {
+  return post('/api/account-review/recheck/', { login_id: loginId, ...scopeParams(scope) })
+}
+
+// GET /api/account-review/status/ — one poll of a queued re-check.
+// -> { task_id, state: refreshing|done|failed, error, review?, note?, … }
+// login_id lets the server fill review.header.payoutPeriods.
+export function fetchAccountReviewStatus(taskId, loginId) {
+  return get('/api/account-review/status/', { task_id: taskId, login_id: loginId })
+}
+
+// GET /api/payout-periods/ — the scope switch on its own.
+// -> { login_id, purchase_date, payout_type, periods[], current_scope, rules }
+export function fetchPayoutPeriods(loginId) {
+  return get('/api/payout-periods/', { login_id: loginId })
+}
+
+// GET /api/account-reviews/ — stored reviews, one row per login + scope_key.
+// opts: { login_id, scope_key, status, tier, date_from, date_to, ordering, page, page_size }
+export function fetchAccountReviews(opts = {}) {
+  return get('/api/account-reviews/', opts)
+}
+// GET /api/account-reviews/<login>/?scope_key= — the row plus the full result.
+export function fetchAccountReviewDetail(loginId, scopeKey) {
+  return get(`/api/account-reviews/${seg(loginId)}/`, { scope_key: scopeKey })
+}
+
+// ---- rule drill-down (T23–T31) ----
+// Nine endpoints, one envelope:
+//   { login_id, scope, periods, account, result, stored_review_chip,
+//     stored_review_checked_at }
+// Keyed by the drill-down's rule key (see RULES in reviewModel.js).
+export const RULE_ACCOUNT_PATHS = {
+  news_trading: '/api/news-trading/account/',
+  gambling: '/api/gambling/account/',
+  weekend_holding: '/api/weekend-holding/account/',
+  order_book_spam: '/api/order-book-spam/account/',
+  max_risk: '/api/max-risk/account/',
+  max_lot: '/api/max-lot/account/',
+  one_percent: '/api/one-percent/account/',
+  minimum_trading_days: '/api/minimum-trading-days/account/',
+  two_minute: '/api/two-minute/account/',
+}
+
+export function fetchRuleForAccount(rule, loginId, scope) {
+  const path = RULE_ACCOUNT_PATHS[rule]
+  if (!path) return Promise.reject(new ApiError(`No drill-down for rule "${rule}".`, 400))
+  // manual_profit only means something to Two Minute; the others would ignore it.
+  const params = scopeParams(scope)
+  if (rule !== 'two_minute') delete params.manual_profit
+  return get(path, { login_id: loginId, ...params })
+}
+
+// ---- Two Minute (T24) ----
+
+// GET /api/two-minute/verdict/ — one `verdict` for the scope, or with
+// scope=all `verdicts[]` (oldest first) + `summary { periods,
+// breached_periods, any_breach }`. Replaces the old payout `cycles[]`.
+export function fetchTwoMinuteVerdict(loginId, scope) {
+  return get('/api/two-minute/verdict/', { login_id: loginId, ...scopeParams(scope) })
+}
+
+// GET /api/two-minute/daily/ — per-day facts behind the verdict.
+// opts: { login_id, trading_platform, trade_date, date_from, date_to, ordering, page, page_size }
+export function fetchTwoMinuteDaily(opts = {}) {
+  return get('/api/two-minute/daily/', opts)
+}
+
+// ---- system ----
+
+// GET /api/health/ — no auth needed, but sent with it like everything else.
+// -> { …, review_queue{configured, connected}, news_events{…}, nightly_runs{…} }
+export function fetchHealth() {
+  return get('/api/health/')
+}
+
+// GET /api/run-log/ — nightly detector runs. A `status: running` row that is
+// old is a hung job.
+// opts: { detector, status, run_date, sink, date_from, date_to, ordering, page, page_size }
+export function fetchRunLog(opts = {}) {
+  return get('/api/run-log/', opts)
 }
 
 // GET /api/trades/?trade_ids=a,b,c — bulk trade lookup. -> { results, missing }

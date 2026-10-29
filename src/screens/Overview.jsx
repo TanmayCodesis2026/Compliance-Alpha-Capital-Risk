@@ -1,13 +1,14 @@
-// Dashboard for GET /api/overview/, which returns one flat count per detection
-// model: { two_minute: 21, order_book_spam: 382, news_trading: 460, … }.
+// Dashboard for GET /api/overview/, which returns one count per detection
+// model under `counts` — accounts with a breach of that rule, not flag rows.
 // Everything here is a rollup of those counts (see decorateOverview in data.js)
-// — there is no severity split, time series or account total in the payload, so
-// none is displayed.
+// — there is no severity split or time series in the payload, so none is
+// displayed. A null count means its source could not be read: it shows as
+// unavailable, never as 0, and `validation_note` says why.
 export default function Overview({ navGo, ov, error, loading }) {
   const card = { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '18px 18px 17px', boxShadow: 'var(--shadow)' }
   const kpiLabel = { fontSize: 10, color: 'var(--text-3)', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', lineHeight: 1.4, marginBottom: 9 }
   const kpiNum = { fontSize: 33, fontWeight: 600, letterSpacing: '-0.035em', fontFamily: "'Geist Mono',monospace" }
-  const num = (n) => Number(n || 0).toLocaleString()
+  const num = (n) => (n === null || n === undefined ? '—' : Number(n).toLocaleString())
 
   const firing = ov?.firing || []
   const quiet = ov?.quiet || []
@@ -24,18 +25,20 @@ export default function Overview({ navGo, ov, error, loading }) {
     { key: 'one_percent', label: 'One Percent' },
     { key: 'minimum_trading_days', label: 'Min Trading Days' },
   ]
+  // A rule missing from the payload reads as 0; one present as null stays
+  // null (unavailable).
   const counts = ov?.counts || {}
-  const headline = HEADLINE.map((h) => ({
-    ...h,
-    count: counts[h.key] ?? 0,
-    model: (ov?.models || []).find((m) => m.key === h.key) || null,
-  }))
+  const headline = HEADLINE.map((h) => {
+    const model = (ov?.models || []).find((m) => m.key === h.key) || null
+    return { ...h, count: h.key in counts ? counts[h.key] : 0, model }
+  })
+  const unavailable = ov?.unavailable || []
 
   const kpis = ov ? [
-    { label: 'Total flags', value: num(ov.totalFlags), sub: 'across every rule' },
+    { label: 'Total', value: num(ov.totalFlags), sub: `${ov.unit} · summed across rules` },
     { label: 'Rules firing', value: `${firing.length}`, sub: `of ${ov.models.length} configured`, color: firing.length ? 'var(--high)' : 'var(--text)' },
     { label: 'Busiest rule', value: ov.top ? num(ov.top.count) : '0', sub: ov.top ? ov.top.label : 'nothing flagged', color: ov.top ? ov.top.color : 'var(--text)' },
-    { label: 'Clean rules', value: `${quiet.length}`, sub: 'no flags raised', color: 'var(--ok)' },
+    { label: 'Clean rules', value: `${quiet.length}`, sub: unavailable.length ? `${unavailable.length} unavailable` : 'no accounts flagged', color: 'var(--ok)' },
   ] : []
 
   return (
@@ -43,7 +46,7 @@ export default function Overview({ navGo, ov, error, loading }) {
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 20, gap: 16, flexWrap: 'wrap' }}>
         <div>
           <h1 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em' }}>Detection Overview</h1>
-          <div style={{ color: 'var(--text-2)', fontSize: 13 }}>Open flag counts per detection model across Evaluation and Qualified accounts.</div>
+          <div style={{ color: 'var(--text-2)', fontSize: 13 }}>Accounts with a breach per rule across Evaluation and Qualified accounts (Reverse / Group Trading: flags).</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <div style={{ fontFamily: "'Geist Mono',monospace", fontSize: 12, color: 'var(--text-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 12px', background: 'var(--surface)' }}>{loading ? 'Loading…' : 'Live'}</div>
@@ -76,8 +79,15 @@ export default function Overview({ navGo, ov, error, loading }) {
         </div>
       )}
 
+      {/* Mongo or prod was unreachable: the affected counts are null. */}
+      {!loading && ov?.validationNote && (
+        <div style={{ marginBottom: 16, padding: '12px 14px', background: 'var(--high-soft)', border: '1px solid color-mix(in srgb,var(--high) 25%,transparent)', borderRadius: 9, fontSize: 12.5 }}>
+          <b>Some counts are unavailable.</b>{' '}
+          <span style={{ color: 'var(--text-2)' }}>{ov.validationNote}</span>
+        </div>
+      )}
+
       {!loading && ov && (<>
-        
 
         {/* ---- KPI row ---- */}
         <div className="grid-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 18 }}>
@@ -105,8 +115,10 @@ export default function Overview({ navGo, ov, error, loading }) {
                   {h.label}
                   <span style={{ marginLeft: 'auto', color: clickable ? 'var(--accent)' : 'transparent', fontSize: 13 }}>›</span>
                 </div>
-                <div style={{ ...kpiNum, fontSize: 30, color: h.count ? 'var(--crit)' : 'var(--text-3)' }}>{num(h.count)}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{h.count ? 'open flags' : 'no flags'}</div>
+                <div style={{ ...kpiNum, fontSize: 30, color: h.count ? (h.key === 'minimum_trading_days' ? 'var(--high)' : 'var(--crit)') : 'var(--text-3)' }}>{num(h.count)}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
+                  {h.count === null ? 'unavailable' : h.count ? (h.model?.unit || 'accounts with a breach') : 'no accounts'}
+                </div>
               </div>
             )
           })}
@@ -115,7 +127,7 @@ export default function Overview({ navGo, ov, error, loading }) {
         {/* ---- one stat tile per model, busiest first ---- */}
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
           <div>
-            <div style={{ fontWeight: 600, fontSize: 14 }}>Flags by rule</div>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>Accounts by rule</div>
             <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 2 }}>
               Bars are scaled to the busiest rule, so a small count stays visible. Rules with a screen open on click.
             </div>
@@ -131,7 +143,7 @@ export default function Overview({ navGo, ov, error, loading }) {
 
         {firing.length === 0 && (
           <div style={{ ...card, marginTop: 14, textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>
-            No flags raised by any rule.
+            {unavailable.length ? 'No account flagged by the rules that could be counted.' : 'No account flagged by any rule.'}
           </div>
         )}
       </>)}
@@ -144,7 +156,7 @@ export default function Overview({ navGo, ov, error, loading }) {
 // isn't here", and a reviewer needs to tell them apart.
 function ModelTile({ m, num, onOpen }) {
   const clickable = !!m.screen
-  const quiet = m.count === 0
+  const quiet = m.count === 0 || m.unavailable
   return (
     <div
       className={clickable ? 'row-hover' : undefined}
@@ -168,11 +180,15 @@ function ModelTile({ m, num, onOpen }) {
         {!quiet && (
           <span style={{ fontFamily: "'Geist Mono',monospace", fontSize: 11, color: 'var(--text-3)' }}>{m.share.toFixed(1)}%</span>
         )}
+        <span style={{ marginLeft: 'auto', fontSize: 10.5, color: 'var(--text-3)', textAlign: 'right' }}>{m.unavailable ? 'unavailable' : m.unit}</span>
       </div>
 
       <div style={{ height: 6, background: 'var(--inset)', borderRadius: 20, overflow: 'hidden' }}>
         <div style={{ height: '100%', width: m.barPct + '%', background: m.color, borderRadius: 20, transition: 'width .4s ease' }} />
       </div>
+
+      {/* two_minute_note / max_risk_note: how the number was approximated */}
+      {m.note && <div style={{ fontSize: 10.5, color: 'var(--text-3)', lineHeight: 1.4 }}>{m.note}</div>}
     </div>
   )
 }

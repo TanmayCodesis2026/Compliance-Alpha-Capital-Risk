@@ -146,13 +146,17 @@ function withAuth(url, options, token) {
   })
 }
 
-const isAuthFailure = (res) => res.status === 401 || res.status === 403
-
 // fetch() with the bearer token attached. Refreshes ahead of a known expiry, and
 // retries ONCE if the server rejects the token anyway. Throws SessionExpiredError
 // when the session is gone — callers can let that propagate; useSession will have
 // already bounced the UI to Login.
-export async function authFetch(url, options = {}) {
+//
+// `authFailureStatuses` says which codes mean "the token is bad". The default
+// keeps 403 in for the customer backend; the risk engine answers 403 for a
+// permission it will never grant (no news-editor rights), and treating that as
+// an expired session would sign the reviewer out for pressing Save.
+export async function authFetch(url, { authFailureStatuses = [401, 403], ...options } = {}) {
+  const isAuthFailure = (res) => authFailureStatuses.includes(res.status)
   let token = getToken()
 
   // Proactive: don't spend a request we know will come back 401.
@@ -175,15 +179,21 @@ export async function authFetch(url, options = {}) {
 
 // authFetch + JSON parsing. Throws on a non-2xx with the server's `detail` when
 // it sends one, so screens can surface a real message instead of a status code.
+// The error also carries `status` and the parsed `body`: a 300 lists the
+// candidate logins and a 400 names the fields that failed, and both are lost
+// if only the message survives.
 export async function authJson(url, options = {}) {
   const response = await authFetch(url, options)
 
   if (!response.ok) {
-    const body = await response.text().catch(() => '')
-    let detail = ''
-    try { detail = JSON.parse(body)?.detail || '' } catch { /* not JSON */ }
-    console.error('Request failed', url, response.status, response.statusText, body)
-    throw new Error(detail || `Request failed: ${response.status} ${response.statusText}`)
+    const text = await response.text().catch(() => '')
+    let body = null
+    try { body = text ? JSON.parse(text) : null } catch { /* not JSON */ }
+    console.error('Request failed', url, response.status, response.statusText, text)
+    const err = new Error(body?.detail || `Request failed: ${response.status} ${response.statusText}`)
+    err.status = response.status
+    err.body = body
+    throw err
   }
 
   return response.json()

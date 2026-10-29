@@ -1,21 +1,25 @@
 import AutoFlags from './AutoFlags.jsx'
 import { fetchMinimumTradingDays } from '../api.js'
+import { breachedFilter, legacyFilter, loginFilter, platformFilter, statusFilter } from './ruleFilters.js'
 
-// Sibling of Two Minute, whose payload turned out to be a flat per-trade row
-// rather than the scan envelope. This one's exact fields aren't confirmed yet,
-// so AutoFlags derives the columns from the first row and shows the remainder
-// on expand — no request beyond the list itself.
+// GET /api/minimum-trading-days/ — one row per account (`mtd:<login>`), clean
+// rows included. The API's `breached=true` means the days are NOT MET: a
+// payout note, never a rule breach, so it is worded that way here.
 export default function MinimumTradingDays(props) {
   return (
     <AutoFlags
       title="Minimum Trading Days"
-      subtitle="Accounts that reached a payout without meeting the required number of trading days."
+      subtitle="Accounts that have not met the required trading days — a payout note, not a rule breach. One row per account."
       fetcher={fetchMinimumTradingDays}
       searchPlaceholder="Search flag IDs…"
+      emptyText="No accounts found."
       filters={[
-        { param: 'login_id', label: 'Login', type: 'text', placeholder: 'login id…', width: 120 },
-        { param: 'instrument', label: 'Instrument', type: 'text', placeholder: 'XAUUSD', upper: true, width: 110 },
-        { param: 'trade_date', label: 'Trade date', type: 'text', placeholder: 'YYYY-MM-DD', width: 120 },
+        loginFilter,
+        breachedFilter({ yes: 'Not met', no: 'Met' }),
+        statusFilter,
+        { param: 'payout_type', label: 'Payout', type: 'text', placeholder: 'Biweekly', width: 100 },
+        platformFilter,
+        legacyFilter,
       ]}
       {...props}
     />
