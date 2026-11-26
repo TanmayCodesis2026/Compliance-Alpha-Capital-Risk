@@ -19,7 +19,6 @@ const SKEW_MS = 60 * 1000
 
 // The store holding the current session. localStorage wins because clearTokens()
 // guarantees the other one is empty.
-const Token = localStorage.getItem('idToken')
 function activeStore() {
   return localStorage.getItem('idToken') ? localStorage : sessionStorage
 }
@@ -99,12 +98,12 @@ async function requestRefresh() {
   const refreshValue = getRefreshToken()
   if (!refreshValue) return ''
 
+  // An open endpoint: no Authorization header. The refresh token sign-in
+  // returned (stored by saveTokenData) goes in the body as `refresh_token`.
   const response = await fetch(REFRESH_URL, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${Token}`,
-    },
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: refreshValue }),
     credentials: 'include',
   }).catch((err) => {
     console.error('Token refresh request failed', err)
@@ -148,8 +147,8 @@ function withAuth(url, options, token) {
 
 // fetch() with the bearer token attached. Refreshes ahead of a known expiry, and
 // retries ONCE if the server rejects the token anyway. Throws SessionExpiredError
-// when the session is gone — callers can let that propagate; useSession will have
-// already bounced the UI to Login.
+// when the refresh itself fails — callers can let that propagate; useSession will
+// have already bounced the UI to Login.
 //
 // `authFailureStatuses` says which codes mean "the token is bad". The default
 // keeps 403 in for the customer backend; the risk engine answers 403 for a
@@ -165,16 +164,18 @@ export async function authFetch(url, { authFailureStatuses = [401, 403], ...opti
     if (!token) { endSession(); throw new SessionExpiredError() }
   }
 
-  let response = await withAuth(url, options, token)
+  const response = await withAuth(url, options, token)
   if (!isAuthFailure(response)) return response
 
   // Reactive: server disagreed about validity (revoked, rotated elsewhere).
   const fresh = await refreshToken()
   if (!fresh) { endSession(); throw new SessionExpiredError() }
 
-  response = await withAuth(url, options, fresh)
-  if (isAuthFailure(response)) { endSession(); throw new SessionExpiredError() }
-  return response
+  // A refresh that succeeded proves the session is alive, so a rejection of the
+  // brand-new token means this server won't accept it (misconfigured auth, no
+  // access) — not that the reviewer is signed out. Hand the response back so the
+  // screen shows the server's message instead of dropping to Login.
+  return withAuth(url, options, fresh)
 }
 
 // authFetch + JSON parsing. Throws on a non-2xx with the server's `detail` when
