@@ -46,6 +46,8 @@ body { margin: 0; }
 ::-webkit-scrollbar-track { background:transparent; }
 
 input::placeholder, textarea::placeholder { color:var(--text-3); }
+/* 2FA code box: digits are big and spaced out; the hint text is not. */
+.otp-input::placeholder { font-family:'Geist',system-ui,sans-serif; font-size:15px; font-weight:400; letter-spacing:normal; }
 input[type="date"] { font-family:'Geist Mono',monospace; }
 input[type="date"]::-webkit-calendar-picker-indicator { opacity:.5; cursor:pointer; padding:0; margin-left:2px; }
 input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity:.95; }

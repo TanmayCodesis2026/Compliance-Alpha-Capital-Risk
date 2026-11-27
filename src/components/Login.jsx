@@ -1,4 +1,5 @@
 import { useState } from "react";
+import TwoFactor from "./TwoFactor.jsx";
 const baseURL = import.meta.env.VITE_BASE_URL;
 
 export default function Login({ onLogin }) {
@@ -8,6 +9,9 @@ export default function Login({ onLogin }) {
   const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // Set when sign-in asks for a 2FA code: the tmp_token it returned. The card
+  // then shows the code step instead of the credentials form.
+  const [tmpToken, setTmpToken] = useState("");
 
 
   const handleSubmit = async (e) => {
@@ -26,15 +30,20 @@ export default function Login({ onLogin }) {
         body: JSON.stringify({
             email: username,
             password: password,
-            skip_2fa:true
         }),
         credentials: 'include',
         })
         const data = await res.json().catch(() => ({}));
+        // 2FA accounts answer {success, requires_2fa: true, temp_token, message}.
+        const challenge = data.temp_token || data.tmp_token || data.tmpToken;
         if (data.idToken) {
-          // Hand the whole payload up — App persists idToken + refreshToken +
-          // expiry via auth.js, then swaps to the Compliance2 screen.
+          // No 2FA on this account. Hand the whole payload up — App persists
+          // idToken + refreshToken + expiry via auth.js.
           onLogin?.(data, remember);
+        } else if (data.requires_2fa || challenge) {
+          // Password accepted; the 2FA modal finishes the sign-in.
+          if (challenge) setTmpToken(challenge);
+          else setError("Two-factor authentication is required, but sign-in returned no temp_token.");
         } else {
           setError(data.detail || data.message || "Invalid credentials.");
         }
@@ -277,6 +286,46 @@ export default function Login({ onLogin }) {
           Secure Authentication • Audit Logging • Role Based Access
         </div>
       </div>
+
+      {tmpToken && (
+        // 2FA pop-up over the sign-in card. Closing it (Back to Login) drops
+        // the temp token, so a new sign-in is needed for a fresh one.
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Two-factor authentication"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+            background: "rgba(0, 0, 0, 0.6)",
+            backdropFilter: "blur(4px)",
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 460,
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              borderRadius: 20,
+              padding: 36,
+              boxShadow: "var(--shadow)",
+            }}
+          >
+            <TwoFactor
+              tmpToken={tmpToken}
+              email={username}
+              onVerified={(data) => onLogin?.(data, remember)}
+              onBack={() => { setTmpToken(""); setPassword(""); setError(""); }}
+            />
+          </div>
+        </div>
+      )}
     </section>
   );
 }
