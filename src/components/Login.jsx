@@ -9,7 +9,7 @@ export default function Login({ onLogin }) {
   const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  // Set when sign-in asks for a 2FA code: the tmp_token it returned. The card
+  // Set when sign-in asks for a 2FA code: the temp_token it returned. The card
   // then shows the code step instead of the credentials form.
   const [tmpToken, setTmpToken] = useState("");
 
@@ -35,7 +35,7 @@ export default function Login({ onLogin }) {
         })
         const data = await res.json().catch(() => ({}));
         // 2FA accounts answer {success, requires_2fa: true, temp_token, message}.
-        const challenge = data.temp_token || data.tmp_token || data.tmpToken;
+        const challenge = data.temp_token || data.tempToken;
         if (data.idToken) {
           // No 2FA on this account. Hand the whole payload up — App persists
           // idToken + refreshToken + expiry via auth.js.

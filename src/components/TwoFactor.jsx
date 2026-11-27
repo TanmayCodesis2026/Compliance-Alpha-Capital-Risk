@@ -9,12 +9,12 @@ function errorMessage(data, status) {
   if (data?.message) return data.message;
   if (data?.detail) return data.detail;
   if (data?.error) return data.error;
-  const field = data?.otp_code || data?.tmp_token || data?.non_field_errors;
+  const field = data?.otp_code || data?.temp_token || data?.non_field_errors;
   if (field) return Array.isArray(field) ? field.join(" ") : String(field);
   return status ? `Verification failed (${status}).` : "Verification failed.";
 }
 
-// Second sign-in step: the code from the authenticator app plus the tmp_token
+// Second sign-in step: the code from the authenticator app plus the temp_token
 // sign-in returned. A verified code returns the same token payload as a sign-in
 // without 2FA, which goes to onVerified exactly as Login's would.
 // Renders inside Login's card, so it brings no page chrome of its own.
@@ -41,7 +41,7 @@ export default function TwoFactor({ tmpToken, email, onVerified, onBack }) {
       const res = await fetch(`${baseURL}auth/2fa/verify/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ otp_code: code, tmp_token: tmpToken }),
+        body: JSON.stringify({ otp_code: code, temp_token: tmpToken }),
         credentials: "include",
       });
       const data = await res.json().catch(() => ({}));
